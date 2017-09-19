@@ -1,0 +1,23 @@
+{
+    "name": "php-ion/ionizer",
+    "description": "PHP ION wrapper",
+    "type": "project",
+    "license": "MIT",
+    "authors": [
+        {
+            "name": "Ivan Shalganov",
+            "email": "a.cobest@gmail.com"
+        }
+    ],
+    "autoload": {
+        "psr-4": {
+            "Ionizer\\": "src/"
+        }
+    },
+    "require": {
+        "php":          ">=7.0",
+        "koda/koda":    "2.*",
+        "symfony/yaml": "*"
+    },
+    "bin": ["bin/ion"]
+}
