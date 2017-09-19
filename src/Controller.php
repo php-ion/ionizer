@@ -153,7 +153,7 @@ class Controller
      */
     public function versionCommand(string $version)
     {
-        $this->ionizer->useVersion($version);
+        $this->ionizer->selectVersion($version);
     }
 
     /**
@@ -201,6 +201,13 @@ class Controller
         $this->log->debug($cmd);
         passthru($cmd, $status);
         exit($status);
+    }
+
+    /**
+     * Test current ion extension
+     */
+    public function testCommand() {
+
     }
 
     /**

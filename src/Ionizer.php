@@ -182,11 +182,28 @@ class Ionizer
         return "-1";
     }
 
+    /**
+     * Returns last actual version of ion or master
+     * @return string
+     */
+    public function getLastVersionName(): string
+    {
+        return key($this->getIndex()["variants"]) ?: "master";
+    }
+
+    /**
+     * @param string $version
+     * @return array
+     */
     private function getVariantForVersion(string $version): array
     {
         $index = $this->getIndex();
-        if (isset($index["variants"][$version][ $this->link_filename ])) {
-            return $index["variants"][$version][ $this->link_filename ];
+        if (isset($index["variants"][$version])) {
+            if (isset($index["variants"][$version][ $this->link_filename ])) {
+                return $index["variants"][$version][ $this->link_filename ];
+            } else {
+                return [];
+            }
         } else {
             throw new \RuntimeException("Not found variant for version $version");
         }
@@ -202,10 +219,10 @@ class Ionizer
         $count = 3;
         foreach ($index["variants"] as $version => $variants) {
             if (isset($variants[ $this->link_filename ])) {
-                $this->log->debug("Found acceptable variant: $version/{$this->link_filename}");
+                $this->log->debug("Found remote build: $version/{$this->link_filename}");
                 return $variants[ $this->link_filename ];
             } else if (file_exists($this->cache_dir . "/$version/" . $this->link_filename)) {
-                $this->log->debug("Found build: $version/{$this->link_filename}");
+                $this->log->debug("Found local build: $version/{$this->link_filename}");
                 return ["version" => $version];
             }
             if(!$count--) {
@@ -222,24 +239,30 @@ class Ionizer
      */
     public function selectVersion(string $version = "")
     {
-        $this->log->debug("Link {$this->link} not found. Resolve problem.");
         if ($version) {
             $variant = $this->getVariantForVersion($version);
-        } else {
+        } elseif ($variant = $this->selectVariant()) {
             $variant = $this->selectVariant();
+            $version = $variant["version"];
+        } else {
+            $version = $this->getLastVersionName();
         }
+        $so_path = $this->cache_dir . "/" . $version .  "/" . $this->link_filename;
         if ($variant) {
-            $so_path = $this->cache_dir . "/" . $variant["version"] .  "/" . $this->link_filename;
             if (!file_exists($so_path)) {
                 $this->log->debug("Download object {$this->so_url_prefix}/{$variant["path"]}?raw=true\n  to $so_path");
                 mkdir(dirname($so_path));
                 $this->download("{$this->so_url_prefix}/{$variant["path"]}?raw=true", $so_path);
             } else {
-                $this->log->debug("Object $so_path found.\n  Create symlink {$this->link}");
+                $this->log->debug("Object $so_path found.");
             }
-            symlink($variant["version"] . "/" . basename($so_path), $this->link);
         } else {
-            $this->compile($version);
+            $this->compile($version, $so_path);
+        }
+        $this->log->debug("Create symlink {$this->link}");
+        @symlink($version .  "/" . $this->link_filename, $this->link);
+        if (!file_exists($this->link)) {
+            throw new \RuntimeException("Could not create symlink {$this->link} -> {$so_path}");
         }
     }
 
@@ -271,28 +294,50 @@ class Ionizer
         }
     }
 
-    private function compile(string $version)
+    private function compile(string $version, string $so_path)
     {
-        try {
+        $this->log->info("Make ion from sources...");
+        if (is_dir($this->cache_dir."/".$version."/repo")) {
+            $this->exec(
+                "cd {$this->cache_dir}/{$version}/repo && git pull && git checkout $version",
+                $clone_log = "{$this->cache_dir}/{$version}/clone.log"
+            );
+        } else {
             $this->log->debug("Clone php-ion repo {$this->git_url} into {$this->cache_dir}/{$version}/repo");
             mkdir($this->cache_dir."/".$version);
+            try {
+                $this->exec(
+                    "git clone --depth=1 {$this->git_url} --branch $version --single-branch {$this->cache_dir}/{$version}/repo",
+                    $clone_log = "{$this->cache_dir}/{$version}/clone.log"
+                );
+            } catch (\Throwable $e) {
+                throw new \RuntimeException("Repo clone failed. See log $clone_log");
+            }
+        }
+        $this->log->debug("Compile {$this->cache_dir}/{$version}/repo");
+        $flags = (new HelperAbstract($this))->buildFlags();
+        try {
             $this->exec(
-                "git clone --depth=1 {$this->git_url} --branch $version --single-branch {$this->cache_dir}/{$version}/repo",
-                "{$this->cache_dir}/{$version}/clone.log"
-            );
-            $this->log->debug("Compile {$this->cache_dir}/{$version}/repo");
-            $this->exec(
-                PHP_BINARY . " {$this->cache_dir}/{$version}/repo/bin/ionizer.php --build={$this->cache_dir}/{$version}/{$this->link_filename}.so",
-                "{$this->cache_dir}/{$version}/build.log"
+                ($flags ? "$flags " : "") .
+                PHP_BINARY . " {$this->cache_dir}/{$version}/repo/bin/ionizer.php --build=$so_path",
+                $build_log = "{$this->cache_dir}/{$version}/build.log"
             );
         } catch (\Throwable $e) {
-            throw new \RuntimeException("");
+            throw new \RuntimeException("Compile failed. See log $build_log. ".
+                "Also see known troubleshooting https://github.com/php-ion/php-ion/blob/master/docs/install.md");
         }
+
     }
 
-    private function exec(string $command, string $log) {
-        $this->log->debug("exec: $command");
-        exec("($command) 2>&1 1>{$log}", $out, $code);
+    private function exec(string $command, string $log = "") {
+        if ($log) {
+            $this->log->debug("exec: $command\n    Log: $log");
+            exec("($command) 2>&1 1>{$log}", $out, $code);
+        } else {
+            $this->log->debug("exec: $command");
+            exec("($command) 2>&1 1>{$log}", $out, $code);
+
+        }
         if($code) {
             throw new \RuntimeException("Failed exec: $command");
         }
@@ -346,10 +391,8 @@ class Ionizer
 
     public function getPhpCmd(): string
     {
-        $memory = $this->getMemoryLimit();
         $ext_path = $this->getExtPath();
-
-        return "IONIZER=1 " . PHP_BINARY .  " -dmemory_limit=$memory -dextension=$ext_path";
+        return "IONIZER=1 php -dmemory_limit=-1 -dextension=$ext_path";
     }
 
 
@@ -362,17 +405,19 @@ class Ionizer
             }
             $command = "help";
         }
-        $this->log = new Log($this->getOption("level", LOG_DEBUG));
+        $this->log  = new Log($this->getOption("level", LOG_DEBUG));
         $controller = new Controller($this);
 
         try {
             if ($command) {
                 if ($controller->info->hasMethod("{$command}Command")) {
                     $controller->info->getMethod("{$command}Command")->invoke($args, (new Handler())->setContext($controller));
+                } elseif(file_exists($command)) {
+                    $controller->scriptCommand($command);
                 } else {
                     throw new \LogicException("Command '$command' not found");
                 }
-            } else {
+            }  else {
                 $controller->helpCommand();
             }
         } catch (InvalidArgumentException $e) {
