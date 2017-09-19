@@ -42,7 +42,7 @@ class Ionizer
         $this->root_dir = dirname(__DIR__);
         $this->cache_dir = $this->root_dir . "/cache";
         if (!is_readable($this->cache_dir)) {
-            throw new \RuntimeException("ION Wrapper: cache directory {$this->cache_dir} in not readable");
+            mkdir($this->cache_dir, 0777, true);
         }
         $this->env = $this->getEnvInfo();
         $this->link_filename = $this->env["os"]
