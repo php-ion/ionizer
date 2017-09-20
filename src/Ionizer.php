@@ -138,7 +138,7 @@ class Ionizer
             }
             $this->log->debug("Store index to cache {$this->cache_dir}/index.json");
             file_put_contents($this->cache_dir . "/index.json", $response);
-            $this->index = $response;
+            $this->index = $json;
             return $json;
         } elseif ($this->index) {
             return $this->index;
@@ -392,12 +392,18 @@ class Ionizer
     public function getPhpCmd(): string
     {
         $ext_path = $this->getExtPath();
-        return "IONIZER=1 php -dmemory_limit=-1 -dextension=$ext_path";
+        $flags = "-dextension=".escapeshellarg($ext_path)." -dmemory_limit=-1";
+        if ($env = getenv('IONIZER_FLAGS')) {
+            $flags .= " " . $env;
+        }
+        putenv("IONIZER_FLAGS=$flags");
+        return "php \$IONIZER_FLAGS";
     }
 
 
     public function run()
     {
+
         list($this->options, $command, $args) = $this->scanArgv();
         if ($this->hasOption("help")) {
             if ($command) {
@@ -421,7 +427,7 @@ class Ionizer
                 $controller->helpCommand();
             }
         } catch (InvalidArgumentException $e) {
-            $this->log->error("Required parameter '" . $e->argument->name . "' (see ion help $command)");
+            $this->log->error("Required parameter '" . $e->argument->name . "' (see ion help $command)\n$e");
         } catch (\Throwable $e) {
             $this->log->error($e);
         }

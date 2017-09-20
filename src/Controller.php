@@ -91,6 +91,7 @@ class Controller
         $help[] = "";
         $help[] = "Options:";
         $help[] = sprintf("  %-10s %s", "--debug", "Enable ionizer debug mode");
+        $help[] = sprintf("  %-10s %s", "--expand", "Expand environment variables like \$IONIZER_FLAGS");
         echo implode("\n", $help)."\n";
     }
 
@@ -111,14 +112,24 @@ class Controller
             "version" => PHP_VERSION,
             "debug" => (bool) PHP_DEBUG || ZEND_DEBUG_BUILD,
             "zts" => (bool) PHP_ZTS,
-            "cmd" => $this->ionizer->getPhpCmd()
+            "cmd" => $this->ionizer->getPhpCmd(),
+            "IONIZER_FLAGS" => getenv('IONIZER_FLAGS')
         ];
         $info["OS"] = [
             "family" => defined('PHP_OS_FAMILY') ? PHP_OS_FAMILY : PHP_OS,
-            "uname" => php_uname(),
+            "uname" => php_uname('a'),
         ];
 
-        echo Yaml::dump($info);
+        foreach ($info as $name => $section) {
+            echo "$name:\n";
+            foreach ($section as $key => $value) {
+                if (is_bool($value)) {
+                    echo "    $key: ".($value ? "true" : "false")."\n";
+                } else {
+                    echo "    $key: $value\n";
+                }
+            }
+        }
     }
 
     public function getCurrentVersion(): string

@@ -1,4 +1,5 @@
 .idea
 vendor
-index.json
 .DS_Store
+cache/*
+!.gitignore

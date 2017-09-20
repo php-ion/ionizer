@@ -1,7 +1,7 @@
 {
     "name": "php-ion/ionizer",
     "description": "PHP ION wrapper",
-    "type": "project",
+    "type": "library",
     "license": "MIT",
     "authors": [
         {
@@ -15,9 +15,8 @@
         }
     },
     "require": {
-        "php":          ">=7.0",
-        "koda/koda":    "2.*",
-        "symfony/yaml": "*"
+        "php":       ">=7.0",
+        "koda/koda": "2.*"
     },
     "bin": ["bin/ion"]
 }
