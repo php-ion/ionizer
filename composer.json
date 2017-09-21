@@ -1,6 +1,6 @@
 {
-    "name": "php-ion/ionizer",
-    "description": "PHP ION wrapper",
+    "name": "phpion/ionizer",
+    "description": "Ionize your PHP code! PHP wrapper for php-ion extension",
     "type": "library",
     "license": "MIT",
     "authors": [
