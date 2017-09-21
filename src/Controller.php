@@ -52,23 +52,18 @@ class Controller
             foreach ($method->args as $name => $arg) {
                 /** @var ArgumentInfo $arg */
                 if ($arg->optional) {
-                    $args[] = "[$name]";
+                    $args[] = "[<$name>]";
                 } else {
-                    $args[] = "$name";
+                    $args[] = "<$name>";
                 }
             }
-            $help[] = "Usage: ion $command " . implode(" ", $args);
-            $help[] = "About: ".str_replace("\n", "\n       ", $method->getDescription());
+            $help[] = "Usage:";
+            $help[] = "  ion $command " . implode(" ", $args);
             $help[] = "";
             if ($method->args) {
                 $help[] = "Arguments:";
                 foreach ($method->args as $name => $arg) {
-                    if ($arg->optional) {
-                        $optional = "By default is ".var_export($arg->default, true).".";
-                    } else {
-                        $optional = "";
-                    }
-                    $desc = rtrim($arg->getDescription(), "."). ". ".$optional;
+                    $desc = rtrim($arg->getDescription(), "."). ".";
                     // add padding
                     $desc = str_replace("\n", "\n" . sprintf("  %-10s // ", ""), $desc);
                     $help[] = sprintf("  %-10s // %s", $name, $desc);
@@ -76,22 +71,35 @@ class Controller
             } else {
                 $help[] = "No arguments";
             }
+            $help[] = "";
+            $help[] = "About:";
+            $help[] = "  ".str_replace("\n", "\n  ", $method->getDescription());
         } else {
-            $help[] = "Usage: ion [options] command [arguments]";
-            $help[] = "Help:  ion help";
-            $help[] = "       ion help [command]";
+            $help[] = "Usage:";
+            $help[] = "  ion [options] command [arguments]";
+            $help[] = "";
+            $help[] = "Help:";
+            $help[] = "  ion help";
+            $help[] = "  ion help <command>";
             $help[] = "";
             $help[] = "Commands:";
             foreach ($this->info->methods as $name => $info) {
                 $name = str_replace("Command", "", $name);
-                $help[] = sprintf("  %-10s // %s", $name, $info->getDescription());
+                if (strpos($info->getDescription(), "\n")) {
+                    $desc = strstr($info->getDescription(), "\n", true);
+                } elseif (strpos($info->getDescription(), ". ")) {
+                    $desc = strstr($info->getDescription(), ".", true);
+                } else {
+                    $desc = $info->getDescription();
+                }
+                $help[] = sprintf("  %-10s // %s", $name, $desc);
             }
         }
 
         $help[] = "";
-        $help[] = "Options:";
-        $help[] = sprintf("  %-10s %s", "--debug", "Enable ionizer debug mode");
-        $help[] = sprintf("  %-10s %s", "--expand", "Expand environment variables like \$IONIZER_FLAGS");
+//        $help[] = "Options:";
+//        $help[] = sprintf("  %-10s %s", "--debug", "Enable ionizer debug mode");
+//        $help[] = sprintf("  %-10s %s", "--expand", "Expand environment variables like \$IONIZER_FLAGS");
         echo implode("\n", $help)."\n";
     }
 
@@ -168,19 +176,22 @@ class Controller
     }
 
     /**
-     * Update version's index
+     * The command download new index of versions from remote repository.
      */
     public function updateCommand()
     {
-
+        $this->ionizer->getIndex(true);
     }
 
     /**
-     *  Update version's index and upgrade ion to newest version
+     * Update index and upgrade ion to newest version
+     * The command download new index of versions from remote repository.
+     * After that reads the index of versions and updates the php-ion to newest version
      */
     public function upgradeCommand()
     {
-
+        $this->ionizer->getIndex(true);
+        $this->ionizer->selectVersion();
     }
 
     /**
@@ -192,23 +203,41 @@ class Controller
     }
 
     /**
-     * Run PHP code
-     * @param string $code PHP code without using script tags <?..?>
+     * Evaluate a string as PHP code.
+     * The code must not be wrapped in opening and closing PHP tags.
+     *
+     * It is still possible to leave and re-enter PHP mode though using the appropriate PHP tags.
+     *
+     * Apart from that the passed code must be valid PHP.
+     * This includes that all statements must be properly terminated using a semicolon.
+     *
+     * A return statement will immediately terminate the evaluation of the code.
+     *
+     * @param string $code Valid PHP code to be evaluated.
+     * @param array $args Any command line arguments for code
      */
-    public function runCommand(string $code)
+    public function evalCommand(string $code, ...$args)
     {
-        $cmd = $this->ionizer->getPhpCmd() . " -r " . escapeshellarg($code . ';');
+        if ($args) {
+            if ($args[0] !== "--") {
+                array_unshift($args, "--");
+            }
+        }
+        $cmd = $this->ionizer->getPhpCmd() . " -r " . escapeshellarg($code) . " " . implode(" ", $args);
         $this->log->debug($cmd);
         passthru($cmd, $status);
     }
 
     /**
-     * Parse and execute PHP file
-     * @param string $path
+     * Parse and execute the specified file.
+     *
+     * Note that there is no restriction on which files can be executed; in particular, the filename is not required have a .php extension.
+     * @param string $file
+     * @param array $args Any command line arguments for code
      */
-    public function scriptCommand(string $path)
+    public function runCommand(string $file, ...$args)
     {
-        $cmd = $this->ionizer->getPhpCmd() . " $path";
+        $cmd = $this->ionizer->getPhpCmd() . " -f " . escapeshellarg($file) . " " . implode(" ", $args);
         $this->log->debug($cmd);
         passthru($cmd, $status);
         exit($status);

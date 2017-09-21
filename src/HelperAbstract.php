@@ -3,7 +3,7 @@
 namespace Ionizer;
 
 
-class HelperAbstract
+abstract class HelperAbstract
 {
     public $ionizer;
     public function __construct(Ionizer $ionizer)
@@ -12,7 +12,7 @@ class HelperAbstract
     }
 
     abstract public function buildFlags(): string;
-    abstract public function getMemorySize(): int;
+//    abstract public function getMemorySize(): int;
 
     public function filesExists(...$paths)
     {

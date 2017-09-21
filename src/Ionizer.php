@@ -2,6 +2,9 @@
 
 namespace Ionizer;
 
+use Ionizer\Helper\LinuxHelper;
+use Ionizer\Helper\MacOsHelper;
+use Ionizer\Helper\StubHelper;
 use Koda\ClassInfo;
 use Koda\Error\InvalidArgumentException;
 use Koda\Handler;
@@ -52,6 +55,7 @@ class Ionizer
             . ($this->env["zts"] ? "zts" : "nts")
             . ".so";
         $this->link = $this->cache_dir . "/" . $this->link_filename;
+        putenv("IONIZER_STARTER=".dirname(__DIR__));
 
     }
 
@@ -210,10 +214,9 @@ class Ionizer
     }
 
     /**
-     * @param bool $allow_older
      * @return array
      */
-    private function selectVariant($allow_older = false): array
+    private function selectVariant(): array
     {
         $index = $this->getIndex();
         $count = 3;
@@ -242,7 +245,6 @@ class Ionizer
         if ($version) {
             $variant = $this->getVariantForVersion($version);
         } elseif ($variant = $this->selectVariant()) {
-            $variant = $this->selectVariant();
             $version = $variant["version"];
         } else {
             $version = $this->getLastVersionName();
@@ -294,6 +296,17 @@ class Ionizer
         }
     }
 
+    public function getHelper(): HelperAbstract
+    {
+        if ($this->isMacOS()) {
+            return new MacOsHelper($this);
+        } elseif ($this->isLinux()) {
+            return new LinuxHelper($this);
+        } else {
+            return new StubHelper($this);
+        }
+    }
+
     private function compile(string $version, string $so_path)
     {
         $this->log->info("Make ion from sources...");
@@ -315,7 +328,7 @@ class Ionizer
             }
         }
         $this->log->debug("Compile {$this->cache_dir}/{$version}/repo");
-        $flags = (new HelperAbstract($this))->buildFlags();
+        $flags = $this->getHelper()->buildFlags();
         try {
             $this->exec(
                 ($flags ? "$flags " : "") .
@@ -354,16 +367,20 @@ class Ionizer
         foreach($cli_args as $arg) {
             $key = "";
             $value = null;
-            if ($arg[0] == "-") {
-                if($arg[1] == "-") { // long option
-                    $arg = trim($arg, "-");
-                    list($key, $value) = explode("=", $arg) + ["", true];
-                } else { // short option
-                    $key = trim($arg, "-");
-                    $value = true;
-                }
-            } elseif($command) {
+            if($command) {
                 $value = $arg;
+            } elseif ($arg[0] == "-") {
+                if (strlen($arg) > 1) {
+                    if($arg[1] == "-") { // long option
+                        $arg = trim($arg, "-");
+                        list($key, $value) = explode("=", $arg) + ["", true];
+                    } else { // short option
+                        $key = trim($arg, "-");
+                        $value = true;
+                    }
+                } else {
+                    $value = "-";
+                }
             } else {
                 $command = $arg;
             }
@@ -427,7 +444,7 @@ class Ionizer
                 $controller->helpCommand();
             }
         } catch (InvalidArgumentException $e) {
-            $this->log->error("Required parameter '" . $e->argument->name . "' (see ion help $command)\n$e");
+            $this->log->error("Required argument '" . $e->argument->name . "' (see: ion help $command)\n$e");
         } catch (\Throwable $e) {
             $this->log->error($e);
         }
