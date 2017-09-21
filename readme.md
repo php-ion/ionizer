@@ -19,5 +19,4 @@ Using command line you may start scripts with [php ion](https://github.com/php-i
 * `ion info` — show summary info
 * `ion versions`, `ion versions all` - show available versions
 * `ion version <ion-version>` - switch to specific version
-
-See more: `ion help`
+* and more, see `ion help`
