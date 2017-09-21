@@ -14,15 +14,9 @@ Using command line you may start scripts with [php ion](https://github.com/php-i
 
 # Usage
 
-* `ion run <file.php>`
-* `ion eval <php-code>`
-* `ion info`
-* `ion versions`, `ion versions all`
-* `ion version <ion-version>`
-
-
-# More one thing
-
-> How to detect what script started with ionizer
-
-Check enviroment variable `IONIZER_STARTER` via `getenv('IONIZER_STARTER')`. Or check `ION` class.
+* `ion run <file.php>` — parse and execute the specified file, like `php <file.php>`
+* `ion eval <php-code>` — evaluate a string as PHP code, like `php -r <code>`
+* `ion info` — show summary info
+* `ion versions`, `ion versions all` - show available versions
+* `ion version <ion-version>` - switch to specific version
+* and more, see `ion help`
