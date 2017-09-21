@@ -436,7 +436,7 @@ class Ionizer
                 if ($controller->info->hasMethod("{$command}Command")) {
                     $controller->info->getMethod("{$command}Command")->invoke($args, (new Handler())->setContext($controller));
                 } elseif(file_exists($command)) {
-                    $controller->scriptCommand($command);
+                    $controller->runCommand($command);
                 } else {
                     throw new \LogicException("Command '$command' not found");
                 }

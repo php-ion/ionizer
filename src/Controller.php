@@ -226,6 +226,10 @@ class Controller
         $cmd = $this->ionizer->getPhpCmd() . " -r " . escapeshellarg($code) . " " . implode(" ", $args);
         $this->log->debug($cmd);
         passthru($cmd, $status);
+        if ($status > 128) {
+            $this->log->debug("Code exited with abnormal status: $status");
+        }
+        exit($status);
     }
 
     /**
@@ -240,6 +244,9 @@ class Controller
         $cmd = $this->ionizer->getPhpCmd() . " -f " . escapeshellarg($file) . " " . implode(" ", $args);
         $this->log->debug($cmd);
         passthru($cmd, $status);
+        if ($status > 128) {
+            $this->log->debug("Script exited with abnormal status: $status");
+        }
         exit($status);
     }
 
