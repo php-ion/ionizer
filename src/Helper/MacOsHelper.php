@@ -8,6 +8,8 @@ use Ionizer\HelperAbstract;
 class MacOsHelper extends HelperAbstract
 {
 
+    const FAMILY = "macos";
+
     public function getMemorySize(): int
     {
         return trim(`sysctl -n hw.memsize`);
@@ -26,5 +28,10 @@ class MacOsHelper extends HelperAbstract
         } else {
             return "";
         }
+    }
+
+    public function getOsName(): array
+    {
+        return ["darwin", php_uname("r"), self::FAMILY];
     }
 }

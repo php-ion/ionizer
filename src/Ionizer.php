@@ -2,9 +2,6 @@
 
 namespace Ionizer;
 
-use Ionizer\Helper\LinuxHelper;
-use Ionizer\Helper\MacOsHelper;
-use Ionizer\Helper\StubHelper;
 use Koda\ClassInfo;
 use Koda\Error\InvalidArgumentException;
 use Koda\Handler;
@@ -28,7 +25,12 @@ class Ionizer
     public $so_url_prefix = "https://github.com/php-ion/builds/blob/master/builds";
     public $git_url = "https://github.com/php-ion/php-ion.git";
 
+    /**
+     * @var array
+     */
     public $options = [];
+    public $command = "";
+    public $args   = [];
 
     /**
      * @var array index of php-ion variants
@@ -40,6 +42,11 @@ class Ionizer
      */
     public $log;
 
+    /**
+     * @var HelperAbstract
+     */
+    public $helper;
+
     public function __construct()
     {
         $this->root_dir = dirname(__DIR__);
@@ -47,16 +54,47 @@ class Ionizer
         if (!is_readable($this->cache_dir)) {
             mkdir($this->cache_dir, 0777, true);
         }
-        $this->env = $this->getEnvInfo();
-        $this->link_filename = $this->env["os"]
-            . "_php-{$this->env["php"]}_"
-            . ($this->env["debug"] ? "debug" : "non-debug")
+        $this->helper = HelperAbstract::getInstance($this);
+        $this->log  = new Log($this->getOption("level", LOG_DEBUG));
+
+        list($this->options, $this->command, $this->args) = $this->scanArgv();
+        if ($this->hasOption("help")) {
+            if ($this->command) {
+                $args["command"] = $this->command;
+            }
+            $this->command = "help";
+        }
+
+        list($os_name, $os_release, $os_family) = $this->helper->getOsName();
+        $php_release = implode(".", sscanf(PHP_VERSION, "%d.%d"));
+        $php_debug   = PHP_DEBUG || ZEND_DEBUG_BUILD;
+        $php_zts     = (bool) PHP_ZTS;
+
+        $build_os = $this->getBuildOs($os_name, $os_release, $os_family);
+
+        $this->link_filename = $build_os
+            . "_php-{$php_release}_"
+            . ($php_debug ? "debug" : "non-debug")
             . "_"
-            . ($this->env["zts"] ? "zts" : "nts")
+            . ($php_zts ? "zts" : "nts")
             . ".so";
         $this->link = $this->cache_dir . "/" . $this->link_filename;
         putenv("IONIZER_STARTER=".dirname(__DIR__));
 
+    }
+
+    public function getBuildOs(string $os_name, string $os_release, string $os_family) : string
+    {
+        $index = $this->getIndex();
+        if (isset($index["os"][$os_family])) {
+            foreach ($index["os"][$os_family] as $mask => $build_os) {
+                if(fnmatch($mask, "$os_name-$os_release")) {
+                    return $build_os;
+                }
+            }
+        }
+
+        return $os_name . "-" . $os_release;
     }
 
     /**
@@ -109,16 +147,6 @@ class Ionizer
         ];
     }
 
-    public function isLinux()
-    {
-        return strtolower(PHP_OS) == "linux";
-    }
-
-    public function isMacOS()
-    {
-        return strtolower(PHP_OS) == "darwin";
-    }
-
     /**
      * Get index of builds
      *
@@ -153,32 +181,6 @@ class Ionizer
             $this->log->debug("Index mismatch");
             return $this->getIndex(true);
         }
-    }
-
-    /**
-     * Get information about PHP and OS
-     * @return array
-     */
-    public function getEnvInfo() : array
-    {
-        if ($this->isLinux()) {
-            // by default for all linuxes uses build for ubuntu
-            $os = "ubuntu-16.04";
-            $os_family = "linux";
-        } elseif ($this->isMacOS()) {
-            // scan major version of darwin
-            $os = "darwin-" . strstr(php_uname("r"), ".", true);
-            $os_family = "macos";
-        } else {
-            throw new \LogicException("Unsupported OS (linux or macos only)");
-        }
-        return [
-            "os" => $os,
-            "os_family" => $os_family,
-            "php" => implode(".", sscanf(PHP_VERSION, "%d.%d")),
-            "debug" => PHP_DEBUG || ZEND_DEBUG_BUILD,
-            "zts" => (bool) PHP_ZTS
-        ];
     }
 
     public function getMemoryLimit() : string
@@ -296,17 +298,6 @@ class Ionizer
         }
     }
 
-    public function getHelper(): HelperAbstract
-    {
-        if ($this->isMacOS()) {
-            return new MacOsHelper($this);
-        } elseif ($this->isLinux()) {
-            return new LinuxHelper($this);
-        } else {
-            return new StubHelper($this);
-        }
-    }
-
     private function compile(string $version, string $so_path)
     {
         $this->log->info("Make ion from sources...");
@@ -328,7 +319,7 @@ class Ionizer
             }
         }
         $this->log->debug("Compile {$this->cache_dir}/{$version}/repo");
-        $flags = $this->getHelper()->buildFlags();
+        $flags = $this->helper->buildFlags();
         try {
             $this->exec(
                 ($flags ? "$flags " : "") .
@@ -336,13 +327,14 @@ class Ionizer
                 $build_log = "{$this->cache_dir}/{$version}/build.log"
             );
         } catch (\Throwable $e) {
-            throw new \RuntimeException("Compile failed. See log $build_log. ".
+            throw new \RuntimeException("Compile failed. See log $build_log. " .
                 "Also see known troubleshooting https://github.com/php-ion/php-ion/blob/master/docs/install.md");
         }
 
     }
 
-    private function exec(string $command, string $log = "") {
+    private function exec(string $command, string $log = "")
+    {
         if ($log) {
             $this->log->debug("exec: $command\n    Log: $log");
             exec("($command) 2>&1 1>{$log}", $out, $code);
@@ -420,31 +412,22 @@ class Ionizer
 
     public function run()
     {
-
-        list($this->options, $command, $args) = $this->scanArgv();
-        if ($this->hasOption("help")) {
-            if ($command) {
-                $args["command"] = $command;
-            }
-            $command = "help";
-        }
-        $this->log  = new Log($this->getOption("level", LOG_DEBUG));
         $controller = new Controller($this);
 
         try {
-            if ($command) {
-                if ($controller->info->hasMethod("{$command}Command")) {
-                    $controller->info->getMethod("{$command}Command")->invoke($args, (new Handler())->setContext($controller));
-                } elseif(file_exists($command)) {
-                    $controller->runCommand($command);
+            if ($this->command) {
+                if ($controller->info->hasMethod("{$this->command}Command")) {
+                    $controller->info->getMethod("{$this->command}Command")->invoke($this->args, (new Handler())->setContext($controller));
+                } elseif(file_exists($this->command)) {
+                    $controller->runCommand($this->command, $this->args);
                 } else {
-                    throw new \LogicException("Command '$command' not found");
+                    throw new \LogicException("Command '{$this->command}' not found");
                 }
             }  else {
                 $controller->helpCommand();
             }
         } catch (InvalidArgumentException $e) {
-            $this->log->error("Required argument '" . $e->argument->name . "' (see: ion help $command)\n$e");
+            $this->log->error("Required argument '" . $e->argument->name . "' (see: ion help {$this->command})");
         } catch (\Throwable $e) {
             $this->log->error($e);
         }

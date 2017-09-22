@@ -251,6 +251,22 @@ class Controller
     }
 
     /**
+     * Get and set options
+     *
+     * @param string $action what you want to do with config. One of: get, set, list
+     * @param string $name the option name
+     * @param mixed $value new value for 'set' action
+     *
+     * @example list
+     * @example get restart.sleep
+     * @example set version.build_os ubuntu-14.04
+     */
+    public function configCommand(string $action = "list", string $name = "", $value = "")
+    {
+
+    }
+
+    /**
      * Test current ion extension
      */
     public function testCommand() {
