@@ -33,6 +33,7 @@ class LinuxHelper extends HelperAbstract
             //  DISTRIB_CODENAME=xenial
             //  DISTRIB_DESCRIPTION="Ubuntu 16.04.3 LTS"
             $lsb_data = file_get_contents('/etc/lsb-release');
+            $this->ionizer->log->debug($lsb_data);
             foreach (explode("\n", $lsb_data) as $line) {
                 list($key, $value) = explode("=", $line, 2);
                 if ($key == "DISTRIB_ID") {
