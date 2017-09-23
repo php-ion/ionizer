@@ -32,7 +32,7 @@ class LinuxHelper extends HelperAbstract
             //  DISTRIB_RELEASE=16.04
             //  DISTRIB_CODENAME=xenial
             //  DISTRIB_DESCRIPTION="Ubuntu 16.04.3 LTS"
-            $lsb_data = file_get_contents('/etc/lsb-release');
+            $lsb_data = trim(file_get_contents('/etc/lsb-release'));
             $this->ionizer->log->debug($lsb_data);
             foreach (explode("\n", $lsb_data) as $line) {
                 list($key, $value) = explode("=", $line, 2);
