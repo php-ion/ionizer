@@ -10,6 +10,7 @@ class Ionizer
 {
 
     public $cache_dir;
+    public $config_path;
     public $root_dir;
     public $env;
 
@@ -32,6 +33,8 @@ class Ionizer
     public $command = "";
     public $args   = [];
 
+    public $config = [];
+
     /**
      * @var array index of php-ion variants
      */
@@ -47,15 +50,46 @@ class Ionizer
      */
     public $helper;
 
+    public static function getDefaultConfig(): array
+    {
+        return [
+            "restart.sleep"    => 0.0,
+            "restart.min_wait" => 0.2,
+            "restart.attempts" => 0,
+            "restart.on_fail"  => "",
+
+            "version.allow_unstable" => false,
+            "version.force_build"    => true,
+            "version.build_os"       => "auto",
+        ];
+    }
+
     public function __construct()
     {
         $this->root_dir = dirname(__DIR__);
         $this->cache_dir = $this->root_dir . "/cache";
+        $this->config_path = $this->cache_dir . "/config.json";
         if (!is_readable($this->cache_dir)) {
             mkdir($this->cache_dir, 0777, true);
         }
         $this->helper = HelperAbstract::getInstance($this);
-        $this->log  = new Log($this->getOption("level", LOG_DEBUG));
+        $this->log    = new Log($this->getOption("level", LOG_DEBUG));
+        if (file_exists($this->config_path)) {
+            $this->log->debug("Config {$this->config_path} found");
+            $config = file_get_contents($this->config_path);
+            $config = json_decode($config, true);
+            if (json_last_error()) {
+                $this->log->error("Broken config: ".json_last_error_msg()."\nUse default config");
+                $this->config = self::getDefaultConfig();
+            } else {
+                $this->config = array_merge($config, self::getDefaultConfig());
+            }
+        } else {
+            $this->log->debug("Create new config {$this->config_path}");
+            $this->config = self::getDefaultConfig();
+            $this->flushConfig();
+        }
+        $this->config = self::getDefaultConfig();
 
         list($this->options, $this->command, $this->args) = $this->scanArgv();
         if ($this->hasOption("help")) {
@@ -81,6 +115,14 @@ class Ionizer
         $this->link = $this->cache_dir . "/" . $this->link_filename;
         putenv("IONIZER_STARTER=".dirname(__DIR__));
 
+    }
+
+    public function flushConfig()
+    {
+        file_put_contents(
+            $this->config_path,
+            json_encode($this->config, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE)
+        );
     }
 
     public function getBuildOs(string $os_name, string $os_release, string $os_family) : string

@@ -97,9 +97,9 @@ class Controller
         }
 
         $help[] = "";
-//        $help[] = "Options:";
-//        $help[] = sprintf("  %-10s %s", "--debug", "Enable ionizer debug mode");
-//        $help[] = sprintf("  %-10s %s", "--expand", "Expand environment variables like \$IONIZER_FLAGS");
+        $help[] = "Options:";
+        $help[] = sprintf("  %-10s %s", "--stderr=PATH", "Write STDERR to specific path (only for commands <eval> and <run>)");
+        $help[] = sprintf("  %-10s %s", "--stdout=PATH", "Write STDOUT to specific path (only for commands <eval> and <run>)");
         echo implode("\n", $help)."\n";
     }
 
@@ -236,8 +236,8 @@ class Controller
      * Parse and execute the specified file.
      *
      * Note that there is no restriction on which files can be executed; in particular, the filename is not required have a .php extension.
-     * @param string $file
-     * @param array $args Any command line arguments for code
+     * @param string $file Valid PHP script
+     * @param array $args Any command line arguments for file
      */
     public function runCommand(string $file, ...$args)
     {
@@ -253,17 +253,38 @@ class Controller
     /**
      * Get and set options
      *
-     * @param string $action what you want to do with config. One of: get, set, list
+     * @param string $action what you want to do with config. One of: get, set
      * @param string $name the option name
      * @param mixed $value new value for 'set' action
      *
-     * @example list
      * @example get restart.sleep
      * @example set version.build_os ubuntu-14.04
      */
-    public function configCommand(string $action = "list", string $name = "", $value = "")
+    public function configCommand(string $action = "", string $name = "", $value = "")
     {
-
+        if ($action == "get") {
+            if (isset($this->ionizer->config[$name])) {
+                if (is_bool($this->ionizer->config[$name])) {
+                    echo ($this->ionizer->config[$name] ? true : false) . "\n";
+                } else {
+                    echo $this->ionizer->config[$name] . "\n";
+                }
+            } else {
+                throw new \InvalidArgumentException("Config option <$name> not found");
+            }
+        } elseif ($action == "set") {
+            if (isset($this->ionizer->config[$name])) {
+                settype($value, gettype($this->ionizer->config[$name]));
+                $this->ionizer->config[$name] = $value;
+                $this->ionizer->flushConfig();
+            } else {
+                throw new \InvalidArgumentException("Config option <$name> not found");
+            }
+        } else {
+            foreach ($this->ionizer->config as $key => $value) {
+                echo $key . " = " . json_encode($value, JSON_UNESCAPED_UNICODE) . "\n";
+            }
+        }
     }
 
     /**
@@ -274,11 +295,18 @@ class Controller
     }
 
     /**
-     * Start async server
+     * Starts async web server
+     *
+     * If a PHP file is given on the command line when the web server is started it is treated as a "router" script.
+     * The script is run at the start of each HTTP request.
+     *
+     * If a class name is given on the command line when the web server is started it is treated as a "router" class.
+     * The router object was created once when the server starts. The methods is run at the start of each HTTP request.
+     *
      * @param string $listen IP and port, like 127.0.0.1:8088
      * @param string $router PHP script or class
      */
-    public function serverCommand(string $listen, string $router)
+    public function serverCommand(string $listen, string $router = "")
     {
 
     }
