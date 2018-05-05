@@ -3,11 +3,11 @@
 
 // taken from phpunit
 
-if (version_compare('7.0.0', PHP_VERSION, '>')) {
+if (version_compare('7.1.0', PHP_VERSION, '>')) {
     fwrite(
         STDERR,
         sprintf(
-            'This version of PHPUnit is supported on PHP 7.0 and PHP 7.1.' . PHP_EOL .
+            'This version of Ionizer is supported on PHP 7.1+' . PHP_EOL .
             'You are using PHP %s (%s).' . PHP_EOL,
             PHP_VERSION,
             PHP_BINARY
@@ -37,10 +37,17 @@ if (!defined('IONIZER_COMPOSER_INSTALL')) {
     );
 
     exit(1);
+
 }
 
 require IONIZER_COMPOSER_INSTALL;
 
+//$app = new \Ionizer\Console\Application();
+//$app->setIonizer(new \Ionizer\Ionizer());
+//
+//$app->add(new \Ionizer\Console\Command\InfoCommand());
+//$app->add(new \Ionizer\Console\Command\VersionsCommand());
+//$app->setDefaultCommand(new \Ionizer\Console\Command\RunCommand());
+//$app->run();
 $ion = new \Ionizer\Ionizer();
-
 $ion->run();

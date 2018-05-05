@@ -1,14 +1,16 @@
 <?php
 
-namespace Ionizer;
+namespace Ionizer\Helper;
 
 
-use Ionizer\Helper\LinuxHelper;
-use Ionizer\Helper\MacOsHelper;
+use Ionizer\Ionizer;
 
-abstract class HelperAbstract
+class BaseHelper
 {
     const FAMILY = "unknown";
+
+    const BUILD_DEBUG = 1;
+    const BUILD_COVERAGE = 2;
     public $ionizer;
 
     public static function getInstance(Ionizer $ionizer) : self
@@ -29,10 +31,21 @@ abstract class HelperAbstract
         $this->ionizer = $ionizer;
     }
 
-    abstract public function getOsName() : array ;
+    public function getOsName(): array
+    {
+        return ["undefined", "0.0", "undefined"];
+    }
 
-    abstract public function buildFlags(): string;
-//    abstract public function getMemorySize(): int;
+    public function buildFlags(int $flags = 0): string
+    {
+        return "";
+    }
+
+
+    public function getCPUCount(): int
+    {
+        return 1;
+    }
 
     public function filesExists(...$paths)
     {
@@ -43,4 +56,10 @@ abstract class HelperAbstract
         }
         return true;
     }
+
+    public function getCoreDumpPath(): string
+    {
+        return "";
+    }
+
 }

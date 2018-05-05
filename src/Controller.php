@@ -3,9 +3,14 @@
 namespace Ionizer;
 
 
+use Ionizer\Actor\Builder;
+use Ionizer\Actor\Options\BuildOptions;
+use Ionizer\Actor\Options\OptionsInterface;
+use Ionizer\Actor\Options\ServerOptions;
+use Ionizer\Actor\Options\TestOptions;
 use Koda\ArgumentInfo;
 use Koda\ClassInfo;
-use Symfony\Component\Yaml\Yaml;
+use Koda\PropertyInfo;
 
 class Controller
 {
@@ -23,6 +28,11 @@ class Controller
      */
     public $info;
 
+    /**
+     * Controller constructor.
+     * @param Ionizer $ionizer
+     * @throws \Koda\Error\ClassNotFound
+     */
     public function __construct(Ionizer $ionizer)
     {
         $this->ionizer = $ionizer;
@@ -32,17 +42,18 @@ class Controller
             ClassInfo::METHODS => ClassInfo::FLAG_PUBLIC | ClassInfo::FLAG_NON_STATIC
         ], [
             ClassInfo::METHODS => "*Command"
-
         ]);
     }
 
     /**
-     * This help
+     * Displays help for a command or list of commands
      * @param string $command Show help for this command
+     * @throws \Koda\Error\ClassNotFound
      */
     public function helpCommand(string $command = "")
     {
         $help = [];
+        $padding = sprintf("  %-10s // ", "");
         if ($command) {
             if (!$this->info->hasMethod($command."Command")) {
                 throw new \LogicException("Command '$command' not found");
@@ -52,37 +63,80 @@ class Controller
             foreach ($method->args as $name => $arg) {
                 /** @var ArgumentInfo $arg */
                 if ($arg->optional) {
-                    $args[] = "[<$name>]";
+                    if ($arg->variadic) {
+                        $args[] = "[<$name> ...]";
+                    } else {
+                        $args[] = "[<$name>]";
+                    }
                 } else {
                     $args[] = "<$name>";
                 }
             }
-            $help[] = "Usage:";
+            $help[] = "<cli:yellow>Usage:</cli>";
             $help[] = "  ion $command " . implode(" ", $args);
             $help[] = "";
             if ($method->args) {
-                $help[] = "Arguments:";
+                $options = [];
+                $help[] = "<cli:yellow>Arguments:</cli>";
                 foreach ($method->args as $name => $arg) {
-                    $desc = rtrim($arg->getDescription(), "."). ".";
-                    // add padding
-                    $desc = str_replace("\n", "\n" . sprintf("  %-10s // ", ""), $desc);
-                    $help[] = sprintf("  %-10s // %s", $name, $desc);
+                    if ($arg->class_hint) {
+                        if (is_subclass_of($arg->class_hint, OptionsInterface::class)) {
+                            $class = new ClassInfo($arg->class_hint);
+                            $class->scan([
+                                ClassInfo::PROPS => ClassInfo::FLAG_NON_STATIC | ClassInfo::FLAG_PUBLIC
+                            ]);
+                            foreach ($class->properties as $property) {
+                                /** @var PropertyInfo $property */
+                                if ($property->type) {
+                                    $type = $property->type;
+                                } elseif ($property->default !== null) {
+                                    $type = gettype($property->default);
+                                } else {
+                                    $type = "MIXED";
+                                }
+
+                                if ($type == "boolean" || $type == "bool") {
+                                    $value = "";
+                                } else {
+                                    $value = "=".strtoupper($type);
+                                }
+
+                                $options[] = CLI::sprintf("  <cli:green>%-20s</cli> // %s",
+                                    "--".$property->name . $value, $property->desc);
+                            }
+                        }
+                    } else {
+                        $desc = rtrim($arg->getDescription(), "."). ".";
+                        // add padding
+                        $desc = str_replace("\n", "\n$padding", $desc);
+                        $help[] = CLI::sprintf("  <cli:green>%-10s</cli> // %s", $name, $desc);
+                    }
+                }
+
+                if ($options) {
+                    $help[] = "";
+                    $help[] = "<cli:yellow>Options:</cli>";
+
+                    foreach ($options as $opt) {
+                        $help[] = $opt;
+                    }
                 }
             } else {
                 $help[] = "No arguments";
             }
             $help[] = "";
-            $help[] = "About:";
+            $help[] = "<cli:yellow>About:</cli>";
             $help[] = "  ".str_replace("\n", "\n  ", $method->getDescription());
         } else {
-            $help[] = "Usage:";
+            $help[] = "<cli:yellow>Usage:</cli>";
             $help[] = "  ion [options] command [arguments]";
+            $help[] = "  ion [options] <file> [<args> ...]  # run php script (see `run` command)";
             $help[] = "";
-            $help[] = "Help:";
+            $help[] = "<cli:yellow>Help:</cli>";
             $help[] = "  ion help";
             $help[] = "  ion help <command>";
             $help[] = "";
-            $help[] = "Commands:";
+            $help[] = "<cli:yellow>Commands:</cli>";
             foreach ($this->info->methods as $name => $info) {
                 $name = str_replace("Command", "", $name);
                 if (strpos($info->getDescription(), "\n")) {
@@ -92,15 +146,28 @@ class Controller
                 } else {
                     $desc = $info->getDescription();
                 }
-                $help[] = sprintf("  %-10s // %s", $name, $desc);
+                $help[] = sprintf("  <cli:green>%-10s</cli> // %s", $name, $desc);
             }
+            $help[] = "";
+            $help[] = "<cli:yellow>Options:</cli>";
+            $help[] = CLI::sprintf(
+                "  <cli:green>%-10s</cli>  // %s",
+                "--config=PATH", "Config path. Current path is: " . $this->ionizer->config_path);
+            $help[] = CLI::sprintf(
+                "  <cli:green>%-10s</cli>  // %s",
+                "--stderr=PATH", "Write STDERR to specific path (only for commands <eval> and <run>)");
+            $help[] = CLI::sprintf(
+                "  <cli:green>%-10s</cli>  // %s",
+                "--stdout=PATH", "Write STDOUT to specific path (only for commands <eval> and <run>)");
+            $help[] = CLI::sprintf(
+                "  <cli:green>%-10s</cli>     // %s",
+                "--verbose", "Increase the verbosity of messages");
+            $help[] = CLI::sprintf(
+                "  <cli:green>%-10s</cli>     // %s",
+                "--gdb", "Starts PHP via gdb (gdb should be installed)");
         }
 
-        $help[] = "";
-        $help[] = "Options:";
-        $help[] = sprintf("  %-10s %s", "--stderr=PATH", "Write STDERR to specific path (only for commands <eval> and <run>)");
-        $help[] = sprintf("  %-10s %s", "--stdout=PATH", "Write STDOUT to specific path (only for commands <eval> and <run>)");
-        echo implode("\n", $help)."\n";
+        echo CLI::parse(implode("\n", $help))."\n";
     }
 
     /**
@@ -110,22 +177,42 @@ class Controller
     {
         $info = [];
         $bin_path = $this->ionizer->getExtPath();
+        $builder = new Builder("/tmp", $this->ionizer, new BuildOptions());
+        [$os_name, $os_version, $os_family] = $this->ionizer->helper->getOsName();
 
         $info["ION"] = [
-            "version" => $this->getCurrentVersion(),
-            "binary" => realpath($bin_path) ?: $bin_path,
-            "link"   => $this->ionizer->link
+            "version" => $this->ionizer->getCurrentVersionPath(),
+            "binary"  => realpath($bin_path) ?: $bin_path,
+            "link"    => $this->ionizer->link
         ];
         $info["PHP"] = [
-            "version" => PHP_VERSION,
-            "debug" => (bool) PHP_DEBUG || ZEND_DEBUG_BUILD,
-            "zts" => (bool) PHP_ZTS,
-            "cmd" => $this->ionizer->getPhpCmd(),
-            "IONIZER_FLAGS" => getenv('IONIZER_FLAGS')
+            "version"    => PHP_VERSION,
+            "zend_version" => zend_version(),
+            "debug"      => (bool) PHP_DEBUG || ZEND_DEBUG_BUILD,
+            "zts"        => (bool) PHP_ZTS,
+            "cmd"        => $this->ionizer->getPhpCmd(),
+            "phpunit"    => trim(`which phpunit`),
+            "composer"   => trim(`which composer`)
         ];
         $info["OS"] = [
-            "family" => defined('PHP_OS_FAMILY') ? PHP_OS_FAMILY : PHP_OS,
-            "uname" => php_uname('a'),
+            "family"     => $os_family,
+            "name"       => $os_name,
+            "version"    => $os_version,
+            "uname"      => php_uname('a'),
+            "cpu_count"  => $this->ionizer->helper->getCPUCount(),
+            "cores_path" => $this->ionizer->helper->getCoreDumpPath(),
+            "cores_size" => trim(`ulimit -c`),
+            "fd_limit"   => trim(`ulimit -n`)
+        ];
+        $info["IONIZER"] = [
+            "version"     => $this->ionizer::VERSION,
+            "config_file" => $this->ionizer->config_path,
+            "cache_dir"   => $this->ionizer->cache_dir,
+            "cflags"      => getenv("CFLAGS"),
+            "ldflags"     => getenv("LDFLAGS"),
+            "build_env"   => $this->ionizer->helper->buildFlags(),
+            "gdb_cmd"     => $builder->gdb_cmd . " ...",
+            "php_cmd"     => PHP_BINARY . " " . getenv('IONIZER_FLAGS') . " ..."
         ];
 
         foreach ($info as $name => $section) {
@@ -140,11 +227,6 @@ class Controller
         }
     }
 
-    public function getCurrentVersion(): string
-    {
-        return basename(dirname(readlink($this->ionizer->link)));
-    }
-
     /**
      * Show available version
      *
@@ -153,7 +235,7 @@ class Controller
     public function versionsCommand(bool $all = false)
     {
         $index = $this->ionizer->getIndex($all ? true : false);
-        $current = $this->getCurrentVersion();
+        $current = $this->ionizer->getCurrentVersionPath();
         foreach ($index["variants"] as $version => $variant) {
             if ($current == $version) {
                 $marker = "*";
@@ -234,8 +316,8 @@ class Controller
 
     /**
      * Parse and execute the specified file.
-     *
-     * Note that there is no restriction on which files can be executed; in particular, the filename is not required have a .php extension.
+     * Note that there is no restriction on which files can be executed; in particular,
+     * the filename is not required have a .php extension.
      * @param string $file Valid PHP script
      * @param array $args Any command line arguments for file
      */
@@ -264,11 +346,7 @@ class Controller
     {
         if ($action == "get") {
             if (isset($this->ionizer->config[$name])) {
-                if (is_bool($this->ionizer->config[$name])) {
-                    echo ($this->ionizer->config[$name] ? true : false) . "\n";
-                } else {
-                    echo $this->ionizer->config[$name] . "\n";
-                }
+                echo json_encode($this->ionizer->config[$name], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_PRETTY_PRINT);
             } else {
                 throw new \InvalidArgumentException("Config option <$name> not found");
             }
@@ -282,15 +360,17 @@ class Controller
             }
         } else {
             foreach ($this->ionizer->config as $key => $value) {
-                echo $key . " = " . json_encode($value, JSON_UNESCAPED_UNICODE) . "\n";
+                echo $key . " = " . json_encode($value, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_PRETTY_PRINT) . "\n";
             }
         }
     }
 
     /**
      * Test current ion extension
+     * @param string $what
+     * @param TestOptions $options
      */
-    public function testCommand() {
+    public function testCommand(string $what, TestOptions $options) {
 
     }
 
@@ -303,12 +383,32 @@ class Controller
      * If a class name is given on the command line when the web server is started it is treated as a "router" class.
      * The router object was created once when the server starts. The methods is run at the start of each HTTP request.
      *
-     * @param string $listen IP and port, like 127.0.0.1:8088
      * @param string $router PHP script or class
+     * @param ServerOptions $options
      */
-    public function serverCommand(string $listen, string $router = "")
+    public function serverCommand(string $router, ServerOptions $options)
     {
 
+    }
+
+    /**
+     * Build the php-ion from source
+     *
+     * @param string $what version or branch or commit or path to ion repo (e.g. 0.8.3, master, 33b1e417, /tmp/ion-src)
+     * @param BuildOptions $options build options
+     * @example /tmp/ion-src --build=/tmp/ion.so
+     * @example master --debug --gdb --build --test
+     */
+    public function buildCommand(string $what, BuildOptions $options)
+    {
+        if ($path = realpath($what)) { // build by path
+            $builder = new Builder($path, $this->ionizer, $options);
+        } else { // build commit
+            $path = $this->ionizer->gitClone($what);
+            $builder = new Builder($path, $this->ionizer, $options);
+        }
+        $this->log->debug("Build from source $path");
+        $builder->run();
     }
 
 }
