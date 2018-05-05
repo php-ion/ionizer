@@ -16,8 +16,7 @@
     },
     "require": {
         "php":       ">=7.0",
-        "koda/koda": "2.*",
-        "symfony/console": "^4.0"
+        "koda/koda": "2.*"
     },
     "bin": ["bin/ion"]
 }
