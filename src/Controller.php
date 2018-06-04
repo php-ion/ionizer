@@ -8,6 +8,7 @@ use Ionizer\Actor\Options\BuildOptions;
 use Ionizer\Actor\Options\OptionsInterface;
 use Ionizer\Actor\Options\ServerOptions;
 use Ionizer\Actor\Options\TestOptions;
+use Ionizer\Actor\Tester;
 use Koda\ArgumentInfo;
 use Koda\ClassInfo;
 use Koda\PropertyInfo;
@@ -122,7 +123,7 @@ class Controller
                     }
                 }
             } else {
-                $help[] = "No arguments";
+                $help[] = "<cli:yellow>No arguments</cli>";
             }
             $help[] = "";
             $help[] = "<cli:yellow>About:</cli>";
@@ -164,7 +165,7 @@ class Controller
                 "--verbose", "Increase the verbosity of messages");
             $help[] = CLI::sprintf(
                 "  <cli:green>%-10s</cli>     // %s",
-                "--gdb", "Starts PHP via gdb (gdb should be installed)");
+                "--debug", "Starts PHP via gdb (gdb should be installed)");
         }
 
         echo CLI::parse(implode("\n", $help))."\n";
@@ -228,18 +229,31 @@ class Controller
     }
 
     /**
+     * Describe an extension
+     *
+     * @param string $what version or branch or commit or path to ion repo (e.g. 0.8.3, master, 33b1e417, /tmp/ion-src)
+     */
+    public function descCommand(string $what = "")
+    {
+        if (is_file($what)) {
+            passthru("php -dextension=" . escapeshellarg($what) . " " . dirname(__DIR__) . "/resources/describe.php");
+        }
+    }
+
+    /**
      * Show available version
      *
      * @param bool $all (is a) Show all available versions, including versions in the repository
      */
     public function versionsCommand(bool $all = false)
     {
+        $this->ionizer->index->getVersionsNames($all);
         $index = $this->ionizer->getIndex($all ? true : false);
         $current = $this->ionizer->getCurrentVersionPath();
         foreach ($index["variants"] as $version => $variant) {
             if ($current == $version) {
                 $marker = "*";
-            } elseif (file_exists($this->ionizer->cache_dir . "/$version/".$this->ionizer->link_filename)) {
+            } elseif (file_exists($this->ionizer->cache_dir . "/$version/".$this->ionizer->build_id)) {
                 $marker = "v";
             } else {
                 $marker = " ";
@@ -354,12 +368,12 @@ class Controller
             if (isset($this->ionizer->config[$name])) {
                 settype($value, gettype($this->ionizer->config[$name]));
                 $this->ionizer->config[$name] = $value;
-                $this->ionizer->flushConfig();
+                $this->ionizer->config->flush();
             } else {
                 throw new \InvalidArgumentException("Config option <$name> not found");
             }
         } else {
-            foreach ($this->ionizer->config as $key => $value) {
+            foreach ($this->ionizer->config->getAll() as $key => $value) {
                 echo $key . " = " . json_encode($value, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_PRETTY_PRINT) . "\n";
             }
         }
@@ -367,11 +381,31 @@ class Controller
 
     /**
      * Test current ion extension
-     * @param string $what
+     * @param string $what version or branch or commit or path to ion repo (e.g. 0.8.3, master, 33b1e417, /tmp/ion-src)
      * @param TestOptions $options
      */
-    public function testCommand(string $what, TestOptions $options) {
+    public function testCommand(string $what, TestOptions $options)
+    {
 
+        $tests_path = "";
+        if (is_dir($what)) {
+            $tests_path = $what;
+            $ext_path = $what . "/src/modules/ion.so";
+        } elseif (is_file($what)) {
+            $ext_path = $what;
+        }
+
+//        $tester = new Tester()
+
+
+
+        if ($options->ion_path) {
+            $tests_path = $options->ion_path;
+        }
+
+
+
+        passthru("php -dextension=" . escapeshellarg($ext_path) . " phpunit --configuration=".escapeshellarg($tests_path . "/phpunit")." " . dirname(__DIR__) . "/resources/describe.php");
     }
 
     /**

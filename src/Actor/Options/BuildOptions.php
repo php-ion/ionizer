@@ -24,7 +24,7 @@ class BuildOptions implements OptionsInterface
     /**
      * @var string do clean build from runtime compile files ('ext' or 'all')
      */
-    public $clean = "ext";
+    public $clean = "";
     /**
      * @var bool do clean depends from runtime compile files
      */
@@ -46,6 +46,11 @@ class BuildOptions implements OptionsInterface
      * @var string
      */
     public $binary = "";
+
+    /**
+     * @var int count of CPU for make
+     */
+    public $cpus;
     /**
      * @var bool run PHPUnit tests
      */
@@ -168,6 +173,14 @@ class BuildOptions implements OptionsInterface
     public function setBinaryParam(string $path)
     {
         $this->binary = $path;
+    }
+
+    /**
+     * @param int $count
+     */
+    public function setCPUs(int $count)
+    {
+        $this->cpus = $count;
     }
 
     /**

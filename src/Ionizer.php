@@ -3,6 +3,9 @@
 namespace Ionizer;
 
 use Ionizer\Actor\Options\OptionsInterface;
+use Ionizer\Component\Config;
+use Ionizer\Component\Index;
+use Ionizer\Component\Version;
 use Ionizer\Helper\BaseHelper;
 use Koda\ArgumentInfo;
 use Koda\ClassInfo;
@@ -26,8 +29,10 @@ class Ionizer
     public $class;
 
     public $link;
-    public $link_filename;
+    public $build_id;
 
+    public const INDEX_URL = "https://raw.githubusercontent.com/php-ion/builds/master/builds/index.json";
+    public const INDEX_HASH_URL = "https://raw.githubusercontent.com/php-ion/builds/master/builds/index.json.sha1";
     public $index_url = "https://raw.githubusercontent.com/php-ion/builds/master/builds/index.json";
     public $so_url_prefix = "https://github.com/php-ion/builds/blob/master/builds";
     public $git_url = "https://github.com/php-ion/php-ion.git";
@@ -35,16 +40,21 @@ class Ionizer
 
     public $argv = [];
     /**
+     * @var Router
+     */
+    public $router;
+    /**
      * @var array
      */
     public $options = [];
-    public $command = "";
-    public $command_args   = [];
-
-    public $config = [];
 
     /**
-     * @var array index of php-ion variants
+     * @var Config
+     */
+    public $config;
+
+    /**
+     * @var Index index of php-ion variants
      */
     public $index;
 
@@ -57,6 +67,18 @@ class Ionizer
      * @var BaseHelper
      */
     public $helper;
+
+    public $binaries = [
+        "php"       => PHP_BINARY,
+        "phpize"    => 'phpize',
+        "make"      => 'make',
+        "phpunit"   => 'vendor/bin/phpunit',
+        "gdb"       => 'gdb',
+        "gdbserver" => 'gdbserver',
+        "lcov"      => 'lcov',
+        "docker"    => 'docker',
+        "strip"     => 'strip'
+    ];
 
     public function getDefaultConfig(): array
     {
@@ -86,62 +108,59 @@ class Ionizer
     public function __construct()
     {
         $this->root_dir = dirname(__DIR__);
-        $this->home_dir = $_SERVER["HOME"]."/.ionizer.php";
-//        $this->cache_dir = $this->root_dir . "/cache";
-//        $this->config_path = $this->cache_dir . "/config.json";
-//        if (!is_readable($this->cache_dir)) {
-//            mkdir($this->cache_dir, 0777, true);
-//        }
+        $this->home_dir = $_SERVER["HOME"]."/.ionizer-php";
 
         $this->argv = $_SERVER["argv"];
         array_shift($this->argv);
         $this->options = CLI::popOptions($this->argv);
 
-        $this->helper = BaseHelper::getInstance($this);
-        $this->log    = new Log($this->getOption("level", LOG_DEBUG));
-        $this->setConfig($this->getOption("config", $this->home_dir . "/config.json"));
+        $this->helper  = BaseHelper::getInstance($this);
+        $this->log     = new Log($this->getOption("level", LOG_DEBUG));
+        $this->config  = new Config($this->getOption("config", $this->home_dir . "/config.json"), $this->log);
         $this->setCacheDir($this->config["core.cache_dir"]);
-
-//        if (file_exists($this->config_path)) {
-//            $this->log->debug("Config {$this->config_path} found");
-//            $config = file_get_contents($this->config_path);
-//            $config = json_decode($config, true);
-//            if (json_last_error()) {
-//                $this->log->error("Broken config: ".json_last_error_msg()."\nUse default config");
-//                $this->config = self::getDefaultConfig();
-//            } else {
-//                $this->config = array_merge($config, self::getDefaultConfig());
-//            }
-//        } else {
-//            $this->log->debug("Create new config {$this->config_path}");
-//            $this->config = self::getDefaultConfig();
-//            $this->flushConfig();
-//        }
-//        $this->config = self::getDefaultConfig();
-
-//        if ($this->hasOption("help")) {
-//            if ($this->command) {
-//                $args["command"] = $this->command;
-//            }
-//            $this->command = "help";
-//        }
+//        $this->current = new Version();
+        $this->index   = new Index($this->cache_dir . "/index.json", $this);
 
         list($os_name, $os_release, $os_family) = $this->helper->getOsName();
         $php_release = implode(".", sscanf(PHP_VERSION, "%d.%d"));
         $php_debug   = PHP_DEBUG || ZEND_DEBUG_BUILD;
         $php_zts     = (bool) PHP_ZTS;
 
-        $build_os = $this->getBuildOs($os_name, $os_release, $os_family);
+        $build_os = $this->index->getBuildOs($os_name, $os_release, $os_family);
 
-        $this->link_filename = $build_os
+        $this->build_id = $build_os
             . "_php-{$php_release}_"
             . ($php_debug ? "debug" : "non-debug")
             . "_"
             . ($php_zts ? "zts" : "nts")
             . ".so";
-//        $this->link = $this->cache_dir . "/" . $this->link_filename;
+        $this->link = $this->cache_dir . "/" . $this->build_id;
         putenv("IONIZER_STARTER=".dirname(__DIR__));
 
+    }
+
+    /**
+     * @return string
+     */
+    public function getBuildID(): string
+    {
+        return $this->build_id;
+    }
+
+    const VER_FORCE = 1;
+    const VER_WITH_DIST = 2;
+
+    public function getVersion($version, int $flags = 0): ?Version
+    {
+        if ($version === "current") {
+            if (is_link($this->link)) {
+                $dist = readlink($this->link);
+            }
+        }
+
+        if (file_exists($version)) {
+
+        }
     }
 
     /**
@@ -168,67 +187,7 @@ class Ionizer
             }
         }
         $this->cache_dir = realpath($path);
-        $this->link = $this->cache_dir . "/" . $this->link_filename;
-    }
-
-    /**
-     * Load config file
-     * @param string $path
-     */
-    public function setConfig(string $path)
-    {
-        $this->config_path = $path;
-        if (file_exists($this->config_path)) {
-            $this->log->debug("Config '{$this->config_path}' found");
-            if (!is_readable($this->config_path)) {
-                throw new \RuntimeException("Config file '{$this->config_path}' not readable (invalid permissions?)");
-            }
-            $config = file_get_contents($this->config_path);
-            $config = json_decode($config, true);
-            if (json_last_error()) {
-                $this->log->error("Broken config: ".json_last_error_msg()."\nUse default config");
-                $this->config = self::getDefaultConfig();
-            } else {
-                $this->config = array_merge($config, self::getDefaultConfig());
-            }
-        } else {
-            if (!is_dir(dirname($this->config_path))) {
-                mkdir(dirname($this->config_path), 0755, true);
-            }
-            $this->log->debug("Create new config {$this->config_path}");
-            $this->config = self::getDefaultConfig();
-            $this->flushConfig();
-        }
-        $this->config_path = realpath($this->config_path);
-    }
-
-    /**
-     * Write new config
-     */
-    public function flushConfig()
-    {
-        $json = json_encode($this->config, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
-        if (!$json) {
-            throw new \RuntimeException("Saving configuration failed: json error: " . json_last_error_msg());
-        }
-        file_put_contents(
-            $this->config_path,
-            json_encode($this->config, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE)
-        );
-    }
-
-    public function getBuildOs(string $os_name, string $os_release, string $os_family) : string
-    {
-        $index = $this->getIndex();
-        if (isset($index["os"][$os_family])) {
-            foreach ($index["os"][$os_family] as $mask => $build_os) {
-                if(fnmatch($mask, "$os_name-$os_release")) {
-                    return $build_os;
-                }
-            }
-        }
-
-        return $os_name . "-" . $os_release;
+        $this->link = $this->cache_dir . "/" . $this->build_id;
     }
 
     /**
@@ -277,7 +236,7 @@ class Ionizer
         if ($refresh) {
             $context = stream_context_create([
                 "http" => [
-                    "user_agent" => "ion-wrapper/0.1",
+                    "user_agent" => "ionizer/0.1",
                     "headers" => "Accept: */*"
                 ]
             ]);
@@ -311,28 +270,28 @@ class Ionizer
      * Returns last actual version of ion or master
      * @return string
      */
-    public function getLastVersionName(): string
-    {
-        return key($this->getIndex()["variants"]) ?: "master";
-    }
-
+//    public function getLastVersionName(): string
+//    {
+//        return key($this->getIndex()["variants"]) ?: "master";
+//    }
+//
     /**
      * @param string $version
      * @return array
      */
-    private function getVariantForVersion(string $version): array
-    {
-        $index = $this->getIndex();
-        if (isset($index["variants"][$version])) {
-            if (isset($index["variants"][$version][ $this->link_filename ])) {
-                return $index["variants"][$version][ $this->link_filename ];
-            } else {
-                return [];
-            }
-        } else {
-            throw new \RuntimeException("Not found variant for version $version");
-        }
-    }
+//    private function getVariantForVersion(string $version): array
+//    {
+//        $index = $this->getIndex();
+//        if (isset($index["variants"][$version])) {
+//            if (isset($index["variants"][$version][ $this->link_filename ])) {
+//                return $index["variants"][$version][ $this->link_filename ];
+//            } else {
+//                return [];
+//            }
+//        } else {
+//            throw new \RuntimeException("Not found variant for version $version");
+//        }
+//    }
 
     /**
      * @return array
@@ -342,11 +301,11 @@ class Ionizer
         $index = $this->getIndex();
         $count = 3;
         foreach ($index["variants"] as $version => $variants) {
-            if (isset($variants[ $this->link_filename ])) {
-                $this->log->debug("Found remote build: $version/{$this->link_filename}");
-                return $variants[ $this->link_filename ];
-            } else if (file_exists($this->cache_dir . "/$version/" . $this->link_filename)) {
-                $this->log->debug("Found local build: $version/{$this->link_filename}");
+            if (isset($variants[ $this->build_id ])) {
+                $this->log->debug("Found remote build: $version/{$this->build_id}");
+                return $variants[ $this->build_id ];
+            } else if (file_exists($this->cache_dir . "/$version/" . $this->build_id)) {
+                $this->log->debug("Found local build: $version/{$this->build_id}");
                 return ["version" => $version];
             }
             if(!$count--) {
@@ -370,7 +329,7 @@ class Ionizer
         } else {
             $version = $this->getLastVersionName();
         }
-        $so_path = $this->cache_dir . "/" . $version .  "/" . $this->link_filename;
+        $so_path = $this->cache_dir . "/" . $version .  "/" . $this->build_id;
         if ($variant) {
             if (!file_exists($so_path)) {
                 $this->log->debug("Download object {$this->so_url_prefix}/{$variant["path"]}?raw=true\n  to $so_path");
@@ -383,11 +342,12 @@ class Ionizer
             $this->compile($version, $so_path);
         }
         $this->log->debug("Create symlink {$this->link}");
-        @symlink($version .  "/" . $this->link_filename, $this->link);
+        @symlink($version .  "/" . $this->build_id, $this->link);
         if (!file_exists($this->link)) {
             throw new \RuntimeException("Could not create symlink {$this->link} -> {$so_path}");
         }
     }
+
 
     public function getExtPath(bool $autoload = true) : string
     {
@@ -463,10 +423,10 @@ class Ionizer
     {
         if ($log) {
             $this->log->debug("exec: $command\n    Log: $log");
-            exec("($command) 2>&1 1>{$log}", $out, $code);
+            passthru("($command) 2>&1 1>{$log}", $code);
         } else {
             $this->log->debug("exec: $command");
-            exec("($command) 2>&1 1>{$log}", $out, $code);
+            passthru("($command) 2>&1 1>{$log}", $code);
 
         }
         if($code) {
@@ -474,88 +434,61 @@ class Ionizer
         }
     }
 
-    public function getPhpCmd(): string
+    public function bin(string $name): string
+    {
+
+    }
+
+    /**
+     * Returns gdb start command
+     * @return string
+     */
+    public function getGdbCmd(): string
+    {
+        return $this->bin("gdb")
+            . ' -ex "handle SIGHUP nostop SIGCHLD nostop" -ex "run" -ex "thread apply all bt"'
+            . ' -ex "set pagination 0" -batch -return-child-result -silent --args';
+    }
+
+    /**
+     * @param bool $starter
+     * @param string $ext_path
+     * @return string
+     */
+    public function getPhpCmd(bool $starter = true, string $ext_path = ""): string
     {
         $starter_path = dirname(__DIR__)."/resources/starter.php";
-        $ext_path = $this->getExtPath();
-        $flags = "-dextension=".escapeshellarg($ext_path)." -dmemory_limit=-1 -dauto_prepend_file=".escapeshellarg($starter_path);
+        $ext_path = $ext_path ?: $this->getExtPath();
+        $flags = "-dextension=".escapeshellarg($ext_path);
+        if ($this->options["noini"] ?? false) {
+            $flags .= " -n";
+        }
+        if ($starter) {
+            $flags .= " -dauto_prepend_file=".escapeshellarg($starter_path);
+        }
         if ($env = getenv('IONIZER_FLAGS')) {
             $flags .= " " . $env;
         }
         if ($this->config["start.php_flags"]) {
             $flags .= " " . $this->config["start.php_flags"];
         }
-        putenv("IONIZER_FLAGS=$flags");
-        return "php \$IONIZER_FLAGS";
+//        putenv("IONIZER_FLAGS=$flags");
+        if (empty($this->options["debug"])) {
+            return "php $flags";
+        } else {
+            return $this->getGdbCmd() . " php $flags";
+        }
+    }
+
+    public function php(string $args, int $flags = 0, string $ext_path = "")
+    {
+        $this->exec($this->getPhpCmd($flags, $ext_path) . " " . $args);
     }
 
 
     public function run()
     {
-        $command = CLI::popArgument($this->argv);
-        $controller = new Controller($this);
-        $handler = new Handler();
-        $handler->setFactory(function (ArgumentInfo $inf) {
-            if (is_subclass_of($inf->class_hint, OptionsInterface::class)) {
-                $class = new ClassInfo($inf->class_hint);
-                $class->scan([
-                    ClassInfo::METHODS => ClassInfo::FLAG_PUBLIC | ClassInfo::FLAG_NON_STATIC
-                ], [
-                    ClassInfo::METHODS => "set*Param"
-
-                ]);
-
-//                $params = CLI::scanArgv();
-                $object = $class->createInstance([]);
-                foreach ($class->methods as $name => $method) {
-                    if ($method->hasArguments()) {
-                        $method->invoke([], (new Handler())->setContext($object));
-                    } else {
-                        $method->invoke([], (new Handler())->setContext($object));
-                    }
-                }
-
-                return $object;
-            } else {
-                return null;
-            }
-        });
-        try {
-            if ($command) {
-                if ($controller->info->hasMethod("{$command}Command")) {
-                    $method = $controller->info->getMethod("{$command}Command");
-                    $argv = [];
-                    foreach ($method->args as $arg) {
-                        if (is_subclass_of($arg->class_hint, OptionsInterface::class)) {
-                            $options = $argv[] = new $arg->class_hint;
-                            foreach(CLI::popOptions($this->argv) as $k => $v) {
-                                $m = "set" . str_replace("_", "", $k);
-                                if (method_exists($options, $m)) {
-                                    $options->{$m}($v);
-                                } else {
-                                    $options->{$k} = $v;
-                                }
-                            }
-                        } else {
-                            $arg = CLI::popArgument($this->argv);
-                            if ($arg) {
-                                $argv[] = $arg;
-                            }
-                        }
-                    }
-                    $controller->info->getMethod("{$command}Command")->invoke($argv, $handler->setContext($controller));
-                } elseif (file_exists($this->command)) {
-                    $controller->runCommand($this->command, ...array_values($this->command_args));
-                } else {
-                    throw new \InvalidArgumentException("Command '{$this->command}' not found");
-                }
-            }  else {
-                $controller->helpCommand();
-            }
-        } catch (InvalidArgumentException $e) {
-            $this->log->error("Required argument '" . $e->argument->name . "' (see: ion help {$this->command})");
-        } catch (\Throwable $e) {
-            $this->log->error($e);
-        }
+        $router = new Router($this);
+        $router->run($this->argv, Controller::class);
     }
 }

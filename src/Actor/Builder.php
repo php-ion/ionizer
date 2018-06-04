@@ -48,6 +48,7 @@ class Builder {
     public $ionizer;
 
     public $gdb_cmd = 'gdb';
+    public $path;
 
     public function __construct(string $path, Ionizer $ionizer, BuildOptions $options) {
         $this->options = $options;
@@ -286,6 +287,7 @@ class Builder {
 //            $gdb = self::GDB_NONE;
 //        }
 
+        $cpus = $this->options->cpus ?: $this->ionizer->helper->getCPUCount();
         if($this->options->clean_deps) {
             if(file_exists("{$this->path}/src/deps/libevent/Makefile")) {
                 $this->exec($this->getBin('make').' clean', "{$this->path}/src/deps/libevent");
@@ -321,14 +323,14 @@ class Builder {
             if(!file_exists("{$this->path}/src/deps/libevent/Makefile")) {
                 $this->configure("{$this->path}/src/deps/libevent", $event_configure);
             }
-            $this->exec($this->getBin('make') . ' -j' . $this->ionizer->helper->getCPUCount(), "{$this->path}/src/deps/libevent");
+            $this->exec($this->getBin('make') . ' -j' . $cpus, "{$this->path}/src/deps/libevent");
 
             $this->exec($this->getBin('phpize'), "{$this->path}/src/");
             $this->configure("{$this->path}/src", $ion_configure);
         }
 
         if($this->options->make) {
-            $this->exec($this->getBin('make').' -j'.$this->ionizer->helper->getCPUCount(),  "{$this->path}/src/");
+            $this->exec($this->getBin('make') . ' -j' . $cpus,  "{$this->path}/src/");
         }
 
 //        if($this->options->info) {
@@ -346,7 +348,7 @@ class Builder {
                         $this->exec($this->getBin('strip')." {$this->path}/src/modules/ion.so");
                     }
                 }
-                copy("src/modules/ion.so", $this->options->binary);
+                copy("{$this->path}/src/modules/ion.so", $this->options->binary);
                 $this->ionizer->log->info("Extension location: ".realpath($this->options->binary));
             } else {
                 throw new \RuntimeException("Failed to copy complied extension from src/modules/ion.so to {$this->options->binary}");

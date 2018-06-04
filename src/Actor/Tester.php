@@ -17,32 +17,30 @@ class Tester
      * @var Ionizer
      */
     public $ionizer;
-    public function __construct(Ionizer $ionizer, TestOptions $params)
+    /**
+     * @var string
+     */
+    public $path;
+
+    public function __construct(string $path, Ionizer $ionizer, TestOptions $params)
     {
         $this->ionizer = $ionizer;
         $this->params = $params;
+        $this->path = $path;
     }
 
     public function run()
     {
-        $php_flags = "";
-        if($this->params->noini) {
-            $php_flags .= "-n ";
+        if($this->params->group) {
+            $group = "--group=".$this->params->group;
+        } else {
+            $group = "";
         }
-
-        if($this->params->test) {
-            if($this->params->test_group) {
-                $group = "--group=".$this->params->test_group;
-            } else {
-                $group = "";
-            }
-            $phpunit = $this->getBin('php')." -e {$php_flags} -dextension=./src/modules/ion.so ".$this->getBin('phpunit')." --colors=always $group ".$this->params->test_path;
-            $this->exec($phpunit, false, $gdb);
-            if($this->params->coverage) {
-                $this->exec($this->getBin('lcov')." --directory . --capture --output-file coverage.info");
-                $this->exec($this->getBin('lcov')." --remove coverage.info 'src/deps/*' '*.h' --output-file coverage.info");
-                $this->exec($this->getBin('lcov')." --list coverage.info");
-            }
+        $this->ionizer->php($this->ionizer->bin('phpunit')." --colors=always $group {$this->path}");
+        if($this->params->coverage) {
+//            $this->ionizer->exec($this->ionizer->bin('lcov')." --directory . --capture --output-file coverage.info");
+//            $this->ionizer->exec($this->ionizer->bin('lcov')." --remove coverage.info 'src/deps/*' '*.h' --output-file coverage.info");
+//            $this->ionizer->exec($this->ionizer->bin('lcov')." --list coverage.info");
         }
     }
 }
