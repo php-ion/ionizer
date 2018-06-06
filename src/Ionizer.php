@@ -31,11 +31,9 @@ class Ionizer
     public $link;
     public $build_id;
 
-    public const INDEX_URL = "https://raw.githubusercontent.com/php-ion/builds/master/builds/index.json";
-    public const INDEX_HASH_URL = "https://raw.githubusercontent.com/php-ion/builds/master/builds/index.json.sha1";
-    public $index_url = "https://raw.githubusercontent.com/php-ion/builds/master/builds/index.json";
-    public $so_url_prefix = "https://github.com/php-ion/builds/blob/master/builds";
-    public $git_url = "https://github.com/php-ion/php-ion.git";
+    public const INDEX_URL  = "https://raw.githubusercontent.com/php-ion/builds/master/builds/index.json";
+    public const BUILDS_URL = "https://github.com/php-ion/builds/blob/master/builds";
+    public const GIT_URL    = "https://github.com/php-ion/php-ion.git";
 
 
     public $argv = [];
@@ -74,33 +72,31 @@ class Ionizer
         "make"      => 'make',
         "phpunit"   => 'vendor/bin/phpunit',
         "gdb"       => 'gdb',
-        "gdbserver" => 'gdbserver',
         "lcov"      => 'lcov',
-        "docker"    => 'docker',
         "strip"     => 'strip'
     ];
 
     public function getDefaultConfig(): array
     {
         return [
-            "restart" => "https://github.com/php-ion/ionizer/wiki/configuration#restart",
+            "_restart" => "https://github.com/php-ion/ionizer/wiki/configuration#restart",
             "restart.sleep"    => 0.0,
             "restart.min_wait" => 0.2,
             "restart.attempts" => 0,
             "restart.on_fail"  => "",
 
-            "version" => "https://github.com/php-ion/ionizer/wiki/configuration#version",
+            "_version" => "https://github.com/php-ion/ionizer/wiki/configuration#version",
             "version.allow_unstable" => false,
             "version.force_build"    => true,
             "version.build_os"       => "auto",
 
-            "start" => "https://github.com/php-ion/ionizer/wiki/configuration#start",
+            "_start" => "https://github.com/php-ion/ionizer/wiki/configuration#start",
             "start.php_flags"   => "",
             "start.use_starter" => true,
             "start.rewrite_proctitle" => true,
             "start.memory_percent"    => -1,
 
-            "core" => "https://github.com/php-ion/ionizer/wiki/configuration#core",
+            "_core" => "https://github.com/php-ion/ionizer/wiki/configuration#core",
             "core.cache_dir" => $this->home_dir . "/cache"
         ];
     }
@@ -147,20 +143,61 @@ class Ionizer
         return $this->build_id;
     }
 
-    const VER_FORCE = 1;
-    const VER_WITH_DIST = 2;
 
-    public function getVersion($version, int $flags = 0): ?Version
+    public function getVersions(): array
     {
-        if ($version === "current") {
-            if (is_link($this->link)) {
-                $dist = readlink($this->link);
+        $versions = [];
+        $response = $this->httpGET("https://api.github.com/repos/php-ion/php-ion/releases");
+        $json = json_decode($response, true);
+        foreach ($json as $release) {
+
+            if ($this->index->hasVersion($release["tag_name"])) {
+                $version = $this->index->getVersion($release["tag_name"]);
+            } else {
+                $version = new Version($this);
+                $version->setVersionID($release["tag_name"]);
             }
+            if ($release["draft"]) {
+                $version->flags |= Version::DRAFT;
+            }
+            $versions[$version->name] = $version;
         }
 
-        if (file_exists($version)) {
-
+        $response = $this->httpGET("https://api.github.com/repos/php-ion/php-ion/branches");
+        $json = json_decode($response, true);
+        foreach ($json as $branch) {
+            if ($this->index->hasVersion($branch["name"])) {
+                $version = $this->index->getVersion($branch["name"]);
+            } else {
+                $version = new Version($this);
+                $version->setVersionID($branch["name"]);
+            }
+            $version->flags |= Version::DRAFT;
+            $version->setVersionID($branch["name"]);
+            $versions[$version->name] = $version;
         }
+
+        return $versions;
+    }
+
+    /**
+     * @param $version
+     * @return Version|null
+     */
+    public function getVersion(string $version): ?Version
+    {
+        $v = new Version($this);
+        if (is_dir($version)) { // if WHAT is repo path
+            if (!file_exists($version . "/phpunit.xml.dist")) {
+                return null;
+            }
+            $v->setVersionPath($version);
+        } elseif (is_file($version)) {
+            return null;
+        } else {
+            throw new \RuntimeException("$version unsupported yet");
+        }
+        return $v;
     }
 
     /**
@@ -296,79 +333,87 @@ class Ionizer
     /**
      * @return array
      */
-    private function selectVariant(): array
-    {
-        $index = $this->getIndex();
-        $count = 3;
-        foreach ($index["variants"] as $version => $variants) {
-            if (isset($variants[ $this->build_id ])) {
-                $this->log->debug("Found remote build: $version/{$this->build_id}");
-                return $variants[ $this->build_id ];
-            } else if (file_exists($this->cache_dir . "/$version/" . $this->build_id)) {
-                $this->log->debug("Found local build: $version/{$this->build_id}");
-                return ["version" => $version];
-            }
-            if(!$count--) {
-                break;
-            }
-        }
-
-        return [];
-    }
+//    private function selectVariant(): array
+//    {
+//        $index = $this->index->get();
+//        $count = 3;
+//        foreach ($index["variants"] as $version => $variants) {
+//            if (isset($variants[ $this->build_id ])) {
+//                $this->log->debug("Found remote build: $version/{$this->build_id}");
+//                return $variants[ $this->build_id ];
+//            } else if (file_exists($this->cache_dir . "/$version/" . $this->build_id)) {
+//                $this->log->debug("Found local build: $version/{$this->build_id}");
+//                return ["version" => $version];
+//            }
+//            if(!$count--) {
+//                break;
+//            }
+//        }
+//
+//        return [];
+//    }
 
     /**
      *
      * @param string $version
      */
-    public function selectVersion(string $version = "")
-    {
-        if ($version) {
-            $variant = $this->getVariantForVersion($version);
-        } elseif ($variant = $this->selectVariant()) {
-            $version = $variant["version"];
-        } else {
-            $version = $this->getLastVersionName();
-        }
-        $so_path = $this->cache_dir . "/" . $version .  "/" . $this->build_id;
-        if ($variant) {
-            if (!file_exists($so_path)) {
-                $this->log->debug("Download object {$this->so_url_prefix}/{$variant["path"]}?raw=true\n  to $so_path");
-                mkdir(dirname($so_path));
-                $this->download("{$this->so_url_prefix}/{$variant["path"]}?raw=true", $so_path);
-            } else {
-                $this->log->debug("Object $so_path found.");
-            }
-        } else {
-            $this->compile($version, $so_path);
-        }
-        $this->log->debug("Create symlink {$this->link}");
-        @symlink($version .  "/" . $this->build_id, $this->link);
-        if (!file_exists($this->link)) {
-            throw new \RuntimeException("Could not create symlink {$this->link} -> {$so_path}");
-        }
-    }
+//    public function selectVersion(string $version = "")
+//    {
+//        if ($version) {
+//            $variant = $this->getVariantForVersion($version);
+//        } elseif ($variant = $this->selectVariant()) {
+//            $version = $variant["version"];
+//        } else {
+//            $version = $this->getLastVersionName();
+//        }
+//        $so_path = $this->cache_dir . "/" . $version .  "/" . $this->build_id;
+//        if ($variant) {
+//            if (!file_exists($so_path)) {
+//                $this->log->debug("Download object {$this->so_url_prefix}/{$variant["path"]}?raw=true\n  to $so_path");
+//                mkdir(dirname($so_path));
+//                $this->download("{$this->so_url_prefix}/{$variant["path"]}?raw=true", $so_path);
+//            } else {
+//                $this->log->debug("Object $so_path found.");
+//            }
+//        } else {
+//            $this->compile($version, $so_path);
+//        }
+//        $this->log->debug("Create symlink {$this->link}");
+//        @symlink($version .  "/" . $this->build_id, $this->link);
+//        if (!file_exists($this->link)) {
+//            throw new \RuntimeException("Could not create symlink {$this->link} -> {$so_path}");
+//        }
+//    }
 
 
-    public function getExtPath(bool $autoload = true) : string
-    {
-        if (!file_exists($this->link) && $autoload) {
-            $this->log->debug("Link {$this->link} not found. Resolve problem.");
-            $this->selectVersion();
-        }
-        return $this->link;
-    }
+//    public function getExtPath(bool $autoload = true) : string
+//    {
+//        if (!file_exists($this->link) && $autoload) {
+//            $this->log->debug("Link {$this->link} not found. Resolve problem.");
+//            $this->selectVersion();
+//        }
+//        return $this->link;
+//    }
 
-    private function download(string $url, string $path)
+    /**
+     * @param string $url
+     * @return string
+     */
+    private function httpGET(string $url): string
     {
         $context = stream_context_create([
             "http" => [
                 "user_agent" => "ion-wrapper/0.1",
                 "headers" => "Accept: */*"
             ],
-//            "notification" => [$this, "downloadNotify"]
         ]);
+        return file_get_contents($url, false, $context);
+    }
+
+    private function download(string $url, string $path)
+    {
         $this->log->progressStart('Downloading');
-        $binary = file_get_contents($url, false, $context);
+        $binary = $this->httpGET($url);
         $this->log->progressEnd();
         if ($binary) {
             file_put_contents($path, $binary);
@@ -426,7 +471,7 @@ class Ionizer
             passthru("($command) 2>&1 1>{$log}", $code);
         } else {
             $this->log->debug("exec: $command");
-            passthru("($command) 2>&1 1>{$log}", $code);
+            passthru("($command) 2>&1", $code);
 
         }
         if($code) {
@@ -434,9 +479,20 @@ class Ionizer
         }
     }
 
-    public function bin(string $name): string
-    {
-
+    /**
+     * @param string $name
+     * @return array|false|string
+     */
+    public function bin(string $name) {
+        if(isset($this->binaries[$name])) {
+            if (file_exists($name)) {
+                return $name;
+            }
+            if ($env = getenv(strtoupper("ion_{$name}_bin"))) {
+                return $env;
+            }
+        }
+        return $name;
     }
 
     /**
@@ -452,14 +508,14 @@ class Ionizer
 
     /**
      * @param bool $starter
-     * @param string $ext_path
+     * @param  Version $version
      * @return string
      */
-    public function getPhpCmd(bool $starter = true, string $ext_path = ""): string
+    public function getPhpCmd(bool $starter = true, Version $version = null): string
     {
         $starter_path = dirname(__DIR__)."/resources/starter.php";
-        $ext_path = $ext_path ?: $this->getExtPath();
-        $flags = "-dextension=".escapeshellarg($ext_path);
+        $version = $version ?: $this->getVersion("current");
+        $flags = "-dextension=".escapeshellarg($version->ext_path);
         if ($this->options["noini"] ?? false) {
             $flags .= " -n";
         }
@@ -480,9 +536,9 @@ class Ionizer
         }
     }
 
-    public function php(string $args, int $flags = 0, string $ext_path = "")
+    public function php(string $args, bool $starter = true, Version $version = null)
     {
-        $this->exec($this->getPhpCmd($flags, $ext_path) . " " . $args);
+        $this->exec($this->getPhpCmd($starter, $version) . " " . $args);
     }
 
 

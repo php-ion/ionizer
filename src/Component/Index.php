@@ -64,9 +64,58 @@ class Index
         return $os_name . "-" . $os_release;
     }
 
-    public function getVersionsNames(bool $all = false)
+    /**
+     * @return Version|null
+     */
+    public function getLastPossibleVersion(): ?Version
     {
+        $v = new Version($this->ionizer);
+        $build_id = $this->ionizer->getBuildID();
+        foreach ($this->index["variants"] as $version => $variants) {
+            if (isset($variants[ $build_id ])) {
+                $this->ionizer->log->debug("Found remote build: $version/{$build_id}");
+                $v->setVersionID($version, $variants[ $build_id ]["path"]);
+                return $v;
+            }
+        }
+        return null;
+    }
 
+    public function hasVersion(string $version): bool
+    {
+        return isset($this->index["variants"][$version][ $this->ionizer->getBuildID() ]);
+    }
+
+    /**
+     * Returns version from build index
+     *
+     * @param string $version
+     * @return Version|null
+     */
+    public function getVersion(string $version): ?Version
+    {
+        $info = $this->index["variants"][$version][ $this->ionizer->getBuildID() ] ?? null;
+        if ($info) {
+            $v = new Version($this->ionizer);
+            $v->setVersionID($version, $info["path"]);
+            return $v;
+        } else {
+            return null;
+        }
+    }
+
+    public function getVersions(bool $all = false): array
+    {
+        $vers = [];
+        $build_id = $this->ionizer->getBuildID();
+        foreach ($this->index["variants"] as $version => $variants) {
+            if ($all || isset($variants[ $build_id ])) {
+                $v = new Version($this->ionizer);
+                $v->setVersionID($version, $variants[ $build_id ]["path"] ?? "");
+                $vers[$version] = $v;
+            }
+        }
+        return $vers;
     }
 
     /**

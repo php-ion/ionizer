@@ -67,8 +67,8 @@ class Router
             }  else {
                 $controller->helpCommand();
             }
-        } catch (InvalidArgumentException $e) {
-            $this->ionizer->log->error("Required argument '" . $e->argument->name . "' (see: ion help {$command})");
+//        } catch (InvalidArgumentException $e) {
+//            $this->ionizer->log->error("Required argument '" . $e->argument->name . "' (see: ion help {$command})");
         } catch (\Throwable $e) {
             $this->ionizer->log->error($e);
         }

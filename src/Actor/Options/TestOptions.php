@@ -6,18 +6,23 @@ namespace Ionizer\Actor\Options;
 class TestOptions implements OptionsInterface
 {
     /**
-     * @var string run specific PHPUnit test group
-     */
-    public $group = "";
-
-    /**
      * @var bool Disable all .ini files
      */
     public $noini = false;
 
     /**
-     * @var string path to ION project directory
+     * @var string File or directory path which tests cases to run
      */
-    public $ion_path = "";
+    public $path;
+
+    /**
+     * @var string Filter which tests to run
+     */
+    public $filter;
+
+    /**
+     * @var string Only runs tests from the specified group(s)
+     */
+    public $group = "";
 
 }

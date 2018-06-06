@@ -28,6 +28,16 @@ class Log
             } else {
                 $prefix = "[ION.".strtoupper(self::$levels[$level])."] ";
             }
+
+            if ($message instanceof \Throwable) {
+                $errors = [];
+                $e = $message;
+                do {
+                    $errors[] = get_class($e) . ": " . $e->getMessage() . " on "
+                        . $e->getFile() . ":" . $e->getLine() . "\n" . $e->getTraceAsString()  . "\n";
+                } while($e = $e->getPrevious());
+                $message = implode("\n", $errors);
+            }
             fwrite(STDERR, $prefix . str_replace("\n", "\n{$prefix}", $message) . "\n");
         }
     }

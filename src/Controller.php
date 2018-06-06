@@ -9,6 +9,7 @@ use Ionizer\Actor\Options\OptionsInterface;
 use Ionizer\Actor\Options\ServerOptions;
 use Ionizer\Actor\Options\TestOptions;
 use Ionizer\Actor\Tester;
+use Ionizer\Component\Version;
 use Koda\ArgumentInfo;
 use Koda\ClassInfo;
 use Koda\PropertyInfo;
@@ -235,9 +236,17 @@ class Controller
      */
     public function descCommand(string $what = "")
     {
-        if (is_file($what)) {
-            passthru("php -dextension=" . escapeshellarg($what) . " " . dirname(__DIR__) . "/resources/describe.php");
+        $version = $this->ionizer->getVersion($what);
+
+        if (!$version) {
+            throw new \InvalidArgumentException("Seems $what doesn't exists or not ION repository");
         }
+
+        if (!file_exists($version->ext_path)) {
+            throw new \InvalidArgumentException("Extension not compiled: object {$version->ext_path} not found.\n"
+                . "Run `ion build $what` before testing. See `ion help build`");
+        }
+        passthru("php -dextension=" . escapeshellarg($version->ext_path) . " " . dirname(__DIR__) . "/resources/describe.php");
     }
 
     /**
@@ -247,18 +256,38 @@ class Controller
      */
     public function versionsCommand(bool $all = false)
     {
-        $this->ionizer->index->getVersionsNames($all);
-        $index = $this->ionizer->getIndex($all ? true : false);
-        $current = $this->ionizer->getCurrentVersionPath();
-        foreach ($index["variants"] as $version => $variant) {
-            if ($current == $version) {
+        $current = "";
+
+        if ($all) {
+            $versions = $this->ionizer->getVersions();
+        } else {
+            $versions = $this->ionizer->index->getVersions(true);
+        }
+        foreach ($versions as $name => $version) {
+            $tags = [];
+            /* @var Version $version */
+            if ($version->isDraft()) {
+                $tags[] = "Draft";
+            }
+            if ($version->hasBinary()) {
+                $tags[] = "Has build";
+            }
+            if ($version->isBranch()) {
+                $tags[] = "Branch";
+            }
+            if ($current == $name) {
                 $marker = "*";
-            } elseif (file_exists($this->ionizer->cache_dir . "/$version/".$this->ionizer->build_id)) {
+            } elseif (file_exists($version->ext_path)) {
                 $marker = "v";
             } else {
                 $marker = " ";
             }
-            echo " $marker $version\n";
+            if ($tags) {
+                $tags = "[".implode(", ", $tags)."]";
+            } else {
+                $tags = "";
+            }
+            echo " $marker $name $tags\n";
         }
     }
 
@@ -387,25 +416,44 @@ class Controller
     public function testCommand(string $what, TestOptions $options)
     {
 
-        $tests_path = "";
-        if (is_dir($what)) {
-            $tests_path = $what;
-            $ext_path = $what . "/src/modules/ion.so";
-        } elseif (is_file($what)) {
-            $ext_path = $what;
+        $php_args     = [];
+        $phpunit_args = [];
+
+        $version = $this->ionizer->getVersion($what);
+
+        if (!$version) {
+            throw new \InvalidArgumentException("Seems $what doesn't exists or not ION repository");
         }
 
-//        $tester = new Tester()
+        if (!file_exists($version->ext_path)) {
+            throw new \InvalidArgumentException("Extension not compiled: object {$version->ext_path} not found.\n"
+                . "Run `ion build $what` before testing. See `ion help build`");
+        }
 
+        if (!is_dir($version->repo_path)) {
+            $this->ionizer->fetchRepo($version);
+        }
 
+        if ($this->ionizer->options["debug"] ?? false) {
+            $php_args[] = "-e";
+        }
 
-        if ($options->ion_path) {
-            $tests_path = $options->ion_path;
+        if ($options->group) {
+            $phpunit_args[] = "--group=" . escapeshellarg($options->group);
+        }
+
+        if (file_exists($version->repo_path . "/vendor/bin/phpunit")) {
+            $phpunit = $version->repo_path . "/vendor/bin/phpunit";
+        } else {
+            $phpunit = $this->ionizer->bin("phpunit");
         }
 
 
-
-        passthru("php -dextension=" . escapeshellarg($ext_path) . " phpunit --configuration=".escapeshellarg($tests_path . "/phpunit")." " . dirname(__DIR__) . "/resources/describe.php");
+        $this->ionizer->php(
+            implode(" ", $php_args) . " "  . $phpunit . " " . implode($phpunit_args),
+            false,
+            $version
+        );
     }
 
     /**
