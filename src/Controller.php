@@ -307,12 +307,13 @@ class Controller
     }
 
     /**
-     * Switch ion version
-     * @param string $version
+     * Select ion version
+     * @param string $version version or branch or commit or path to ion repo (e.g. 0.8.3, master, 33b1e417, /tmp/ion-src)
      */
-    public function versionCommand(string $version)
+    public function selectCommand(string $version)
     {
-        $this->ionizer->selectVersion($version);
+        $v = $this->ionizer->getVersion();
+        $this->ionizer->setActualVersion($v);
     }
 
     /**
@@ -320,7 +321,7 @@ class Controller
      */
     public function updateCommand()
     {
-        $this->ionizer->getIndex(true);
+        $this->ionizer->index->update();
     }
 
     /**
@@ -330,8 +331,8 @@ class Controller
      */
     public function upgradeCommand()
     {
-        $this->ionizer->getIndex(true);
-        $this->ionizer->selectVersion();
+        $version = $this->ionizer->index->getLastPossibleVersion();
+        $this->ionizer->setActualVersion($version);
     }
 
     /**
@@ -378,6 +379,7 @@ class Controller
      * the filename is not required have a .php extension.
      * @param string $file Valid PHP script
      * @param array $args Any command line arguments for file
+     * @return mixed
      */
     public function runCommand(string $file, ...$args)
     {
@@ -387,7 +389,7 @@ class Controller
         if ($status > 128) {
             $this->log->debug("Script exited with abnormal status: $status");
         }
-        exit($status);
+        return $status;
     }
 
     /**
@@ -453,6 +455,10 @@ class Controller
             $php_args[] = "-e";
         }
 
+        if ($options->path) {
+            $phpunit_args[] = escapeshellarg($options->path);
+        }
+
         if ($options->group) {
             $phpunit_args[] = "--group=" . escapeshellarg($options->group);
         }
@@ -464,7 +470,7 @@ class Controller
         }
 
 
-        $this->ionizer->php(
+        return $this->ionizer->php(
             implode(" ", $php_args) . " "  . $phpunit . " " . implode($phpunit_args),
             false,
             $version

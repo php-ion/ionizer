@@ -26,7 +26,7 @@ class Router
         $this->ionizer = $ionizer;
     }
 
-    public function run(array &$argv, string $controller_class)
+    public function run(array &$argv, string $controller_class): int
     {
         $command = CLI::popArgument($argv);
         $controller = new $controller_class($this->ionizer);
@@ -58,9 +58,9 @@ class Router
                             }
                         }
                     }
-                    $controller->info->getMethod("{$command}Command")->invoke($method_args, $handler->setContext($controller));
+                    return (int)$controller->info->getMethod("{$command}Command")->invoke($method_args, $handler->setContext($controller));
                 } elseif (file_exists($command)) {
-                    $controller->runCommand($command, ...array_values($argv));
+                    return (int)$controller->runCommand($command, ...array_values($argv));
                 } else {
                     throw new \InvalidArgumentException("Command '{$command}' not found");
                 }
@@ -71,6 +71,9 @@ class Router
 //            $this->ionizer->log->error("Required argument '" . $e->argument->name . "' (see: ion help {$command})");
         } catch (\Throwable $e) {
             $this->ionizer->log->error($e);
+            return 99;
         }
+
+        return 0;
     }
 }

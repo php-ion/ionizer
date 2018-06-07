@@ -163,19 +163,18 @@ class Ionizer
     {
         $v = new Version($this);
         if (!$version) {
-            if (!file_exists($this->cache_dir . "/actual")) {
+            if (!file_exists($this->home_dir . "/actual")) {
                 $this->log->debug("No one actual ION build found. Resolve problem automatically.");
                 $version = $this->index->getLastPossibleVersion();
                 if ($version) {
-                    $this->log->debug("Setup $version as actual version");
-                    symlink($version->name, "actual");
+                    $this->setActualVersion($version);
                     $v = $version;
                 } else {
                     $this->log->notice("No one actual ION build found. Build ION with `ion build` command (see `ion help build`)");
                     return null;
                 }
             } else {
-                $link = readlink($this->cache_dir . "/actual");
+                $link = readlink($this->home_dir . "/actual");
                 $this->log->debug("Actual version is $link");
                 if (is_dir($this->cache_dir . "/" . $link)) {
                     $v->setVersionID($link);
@@ -201,6 +200,12 @@ class Ionizer
             throw new \RuntimeException("$version unsupported yet");
         }
         return $v;
+    }
+
+    public function setActualVersion(Version $version)
+    {
+        $this->log->debug("Setup $version as actual version");
+        symlink($version->name, $this->home_dir."/actual");
     }
 
     /**
@@ -439,7 +444,7 @@ class Ionizer
 
     }
 
-    private function exec(string $command, string $log = "")
+    private function exec(string $command, string $log = ""): int
     {
         if ($log) {
             $this->log->debug("exec: $command\n    Log: $log");
@@ -449,9 +454,12 @@ class Ionizer
             passthru("($command) 2>&1", $code);
 
         }
-        if($code) {
-            throw new \RuntimeException("Failed exec: $command");
-        }
+        return $code;
+    }
+
+    private function supervisor(string $command, string $log = ""): int
+    {
+
     }
 
     /**
@@ -514,15 +522,15 @@ class Ionizer
         }
     }
 
-    public function php(string $args, bool $starter = true, Version $version = null)
+    public function php(string $args, bool $starter = true, Version $version = null): int
     {
-        $this->exec($this->getPhpCmd($starter, $version) . " " . $args);
+        return $this->exec($this->getPhpCmd($starter, $version) . " " . $args);
     }
 
 
-    public function run()
+    public function run(): int
     {
         $router = new Router($this);
-        $router->run($this->argv, Controller::class);
+        return $router->run($this->argv, Controller::class);
     }
 }

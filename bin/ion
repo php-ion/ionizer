@@ -42,12 +42,7 @@ if (!defined('IONIZER_COMPOSER_INSTALL')) {
 
 require IONIZER_COMPOSER_INSTALL;
 
-//$app = new \Ionizer\Console\Application();
-//$app->setIonizer(new \Ionizer\Ionizer());
-//
-//$app->add(new \Ionizer\Console\Command\InfoCommand());
-//$app->add(new \Ionizer\Console\Command\VersionsCommand());
-//$app->setDefaultCommand(new \Ionizer\Console\Command\RunCommand());
-//$app->run();
 $ion = new \Ionizer\Ionizer();
-$ion->run();
+$status = $ion->run();
+
+exit($status);
