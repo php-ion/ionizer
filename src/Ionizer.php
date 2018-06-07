@@ -2,15 +2,11 @@
 
 namespace Ionizer;
 
-use Ionizer\Actor\Options\OptionsInterface;
 use Ionizer\Component\Config;
 use Ionizer\Component\Index;
 use Ionizer\Component\Version;
 use Ionizer\Helper\BaseHelper;
-use Koda\ArgumentInfo;
 use Koda\ClassInfo;
-use Koda\Error\InvalidArgumentException;
-use Koda\Handler;
 
 class Ionizer
 {
@@ -18,7 +14,6 @@ class Ionizer
     const VERSION = "0.2.0";
 
     public $cache_dir;
-    public $config_path;
     public $root_dir;
     public $home_dir;
     public $env;
@@ -28,7 +23,6 @@ class Ionizer
      */
     public $class;
 
-    public $link;
     public $build_id;
 
     public const INDEX_URL  = "https://raw.githubusercontent.com/php-ion/builds/master/builds/index.json";
@@ -76,35 +70,19 @@ class Ionizer
         "strip"     => 'strip'
     ];
 
-    public function getDefaultConfig(): array
-    {
-        return [
-            "_restart" => "https://github.com/php-ion/ionizer/wiki/configuration#restart",
-            "restart.sleep"    => 0.0,
-            "restart.min_wait" => 0.2,
-            "restart.attempts" => 0,
-            "restart.on_fail"  => "",
-
-            "_version" => "https://github.com/php-ion/ionizer/wiki/configuration#version",
-            "version.allow_unstable" => false,
-            "version.force_build"    => true,
-            "version.build_os"       => "auto",
-
-            "_start" => "https://github.com/php-ion/ionizer/wiki/configuration#start",
-            "start.php_flags"   => "",
-            "start.use_starter" => true,
-            "start.rewrite_proctitle" => true,
-            "start.memory_percent"    => -1,
-
-            "_core" => "https://github.com/php-ion/ionizer/wiki/configuration#core",
-            "core.cache_dir" => $this->home_dir . "/cache"
-        ];
-    }
 
     public function __construct()
     {
         $this->root_dir = dirname(__DIR__);
         $this->home_dir = $_SERVER["HOME"]."/.ionizer-php";
+        $this->cache_dir = $this->home_dir . "/cache";
+
+        if (!is_dir($this->home_dir)) {
+            mkdir($this->home_dir, 0755);
+        }
+        if (!is_dir($this->cache_dir)) {
+            mkdir($this->cache_dir, 0755);
+        }
 
         $this->argv = $_SERVER["argv"];
         array_shift($this->argv);
@@ -113,8 +91,6 @@ class Ionizer
         $this->helper  = BaseHelper::getInstance($this);
         $this->log     = new Log($this->getOption("level", LOG_DEBUG));
         $this->config  = new Config($this->getOption("config", $this->home_dir . "/config.json"), $this->log);
-        $this->setCacheDir($this->config["core.cache_dir"]);
-//        $this->current = new Version();
         $this->index   = new Index($this->cache_dir . "/index.json", $this);
 
         list($os_name, $os_release, $os_family) = $this->helper->getOsName();
@@ -128,9 +104,8 @@ class Ionizer
             . "_php-{$php_release}_"
             . ($php_debug ? "debug" : "non-debug")
             . "_"
-            . ($php_zts ? "zts" : "nts")
-            . ".so";
-        $this->link = $this->cache_dir . "/" . $this->build_id;
+            . ($php_zts ? "zts" : "nts");
+//        $this->link = $this->cache_dir . "/" . $this->build_id;
         putenv("IONIZER_STARTER=".dirname(__DIR__));
 
     }
@@ -181,14 +156,42 @@ class Ionizer
     }
 
     /**
-     * @param $version
+     * @param string $version
      * @return Version|null
      */
-    public function getVersion(string $version): ?Version
+    public function getVersion(string $version = ""): ?Version
     {
         $v = new Version($this);
-        if (is_dir($version)) { // if WHAT is repo path
-            if (!file_exists($version . "/phpunit.xml.dist")) {
+        if (!$version) {
+            if (!file_exists($this->cache_dir . "/actual")) {
+                $this->log->debug("No one actual ION build found. Resolve problem automatically.");
+                $version = $this->index->getLastPossibleVersion();
+                if ($version) {
+                    $this->log->debug("Setup $version as actual version");
+                    symlink($version->name, "actual");
+                    $v = $version;
+                } else {
+                    $this->log->notice("No one actual ION build found. Build ION with `ion build` command (see `ion help build`)");
+                    return null;
+                }
+            } else {
+                $link = readlink($this->cache_dir . "/actual");
+                $this->log->debug("Actual version is $link");
+                if (is_dir($this->cache_dir . "/" . $link)) {
+                    $v->setVersionID($link);
+                } else {
+                    $v = $this->getVersion($link);
+                }
+            }
+        } elseif (is_dir($version)) {
+
+            if (!file_exists($version . "/composer.json")) {
+                $this->log->debug("$version does not contain the file composer.json");
+                return null;
+            }
+            $composer = json_decode(file_get_contents($version . "/composer.json"), true);
+            if ($composer["name"] != "phpion/phpion") {
+                $this->log->warning("$version is not valid ION repository");
                 return null;
             }
             $v->setVersionPath($version);
@@ -201,41 +204,13 @@ class Ionizer
     }
 
     /**
-     * @return string
-     */
-    public function getCurrentVersionPath()
-    {
-        if ($this->link && is_link($this->link)) {
-            return basename(dirname(readlink($this->link)));
-        } else {
-            return "";
-        }
-    }
-
-    /**
-     * Set cache directory
-     * @param string $path
-     */
-    public function setCacheDir(string $path)
-    {
-        if (!is_readable($path)) {
-            if (!mkdir($path, 0755, true)) {
-                throw new \RuntimeException("Failed to create cache directory $path");
-            }
-        }
-        $this->cache_dir = realpath($path);
-        $this->link = $this->cache_dir . "/" . $this->build_id;
-    }
-
-    /**
      * Checks whether the parameter
      *
      * @param string $long
      *
-     * @param string $short
      * @return bool
      */
-    public function hasOption(string $long, string $short = "")
+    public function hasOption(string $long)
     {
         return isset($this->options[$long]);
     }
@@ -268,35 +243,35 @@ class Ionizer
      * @param bool $refresh fetch new index and save in cache
      * @return array
      */
-    public function getIndex(bool $refresh = false): array
-    {
-        if ($refresh) {
-            $context = stream_context_create([
-                "http" => [
-                    "user_agent" => "ionizer/0.1",
-                    "headers" => "Accept: */*"
-                ]
-            ]);
-            $this->log->debug("Fetch new index from {$this->index_url}");
-            $response = file_get_contents($this->index_url, false, $context);
-            $json = json_decode($response, true);
-            if (json_last_error()) {
-                throw new \RuntimeException("Broken json index from {$this->index_url}: " . json_last_error_msg());
-            }
-            $this->log->debug("Store index to cache {$this->cache_dir}/index.json");
-            file_put_contents($this->cache_dir . "/index.json", $response);
-            $this->index = $json;
-            return $json;
-        } elseif ($this->index) {
-            return $this->index;
-        } elseif (file_exists($this->cache_dir . "/index.json")) {
-            $this->log->debug("Read index from cache {$this->cache_dir}/index.json");
-            return $this->index = json_decode(file_get_contents($this->cache_dir . "/index.json"), true);
-        } else {
-            $this->log->debug("Index mismatch");
-            return $this->getIndex(true);
-        }
-    }
+//    public function getIndex(bool $refresh = false): array
+//    {
+//        if ($refresh) {
+//            $context = stream_context_create([
+//                "http" => [
+//                    "user_agent" => "ionizer/0.1",
+//                    "headers" => "Accept: */*"
+//                ]
+//            ]);
+//            $this->log->debug("Fetch new index from {$this->index_url}");
+//            $response = file_get_contents($this->index_url, false, $context);
+//            $json = json_decode($response, true);
+//            if (json_last_error()) {
+//                throw new \RuntimeException("Broken json index from {$this->index_url}: " . json_last_error_msg());
+//            }
+//            $this->log->debug("Store index to cache {$this->cache_dir}/index.json");
+//            file_put_contents($this->cache_dir . "/index.json", $response);
+//            $this->index = $json;
+//            return $json;
+//        } elseif ($this->index) {
+//            return $this->index;
+//        } elseif (file_exists($this->cache_dir . "/index.json")) {
+//            $this->log->debug("Read index from cache {$this->cache_dir}/index.json");
+//            return $this->index = json_decode(file_get_contents($this->cache_dir . "/index.json"), true);
+//        } else {
+//            $this->log->debug("Index mismatch");
+//            return $this->getIndex(true);
+//        }
+//    }
 
     public function getMemoryLimit() : string
     {
@@ -410,17 +385,17 @@ class Ionizer
         return file_get_contents($url, false, $context);
     }
 
-    private function download(string $url, string $path)
-    {
-        $this->log->progressStart('Downloading');
-        $binary = $this->httpGET($url);
-        $this->log->progressEnd();
-        if ($binary) {
-            file_put_contents($path, $binary);
-        } else {
-            throw new \RuntimeException("Failed to download $url");
-        }
-    }
+//    private function download(string $url, string $path)
+//    {
+//        $this->log->progressStart('Downloading');
+//        $binary = $this->httpGET($url);
+//        $this->log->progressEnd();
+//        if ($binary) {
+//            file_put_contents($path, $binary);
+//        } else {
+//            throw new \RuntimeException("Failed to download $url");
+//        }
+//    }
 
     public function gitClone(string $version): string
     {
@@ -514,7 +489,10 @@ class Ionizer
     public function getPhpCmd(bool $starter = true, Version $version = null): string
     {
         $starter_path = dirname(__DIR__)."/resources/starter.php";
-        $version = $version ?: $this->getVersion("current");
+        $version = $version ?: $this->getVersion();
+        if (!$version) {
+            throw new \RuntimeException("No one version found");
+        }
         $flags = "-dextension=".escapeshellarg($version->ext_path);
         if ($this->options["noini"] ?? false) {
             $flags .= " -n";

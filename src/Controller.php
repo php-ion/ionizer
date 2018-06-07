@@ -10,6 +10,7 @@ use Ionizer\Actor\Options\ServerOptions;
 use Ionizer\Actor\Options\TestOptions;
 use Ionizer\Actor\Tester;
 use Ionizer\Component\Version;
+use Ionizer\Helper\BaseHelper;
 use Koda\ArgumentInfo;
 use Koda\ClassInfo;
 use Koda\PropertyInfo;
@@ -174,25 +175,38 @@ class Controller
 
     /**
      * Show summary info
+     * @param string $ion version or branch or commit or path to ion repo (e.g. 0.8.3, master, 33b1e417, /tmp/ion-src).
+     *                    If not present actual version will be used.
      */
-    public function infoCommand()
+    public function infoCommand(string $ion = "")
     {
         $info = [];
-        $bin_path = $this->ionizer->getExtPath();
+        $version = $this->ionizer->getVersion($ion ?: "");
         $builder = new Builder("/tmp", $this->ionizer, new BuildOptions());
         [$os_name, $os_version, $os_family] = $this->ionizer->helper->getOsName();
 
         $info["ION"] = [
-            "version" => $this->ionizer->getCurrentVersionPath(),
-            "binary"  => realpath($bin_path) ?: $bin_path,
-            "link"    => $this->ionizer->link
+            "version"  => "",
+            "binary"   => "",
+            "build_id" => $this->ionizer->getBuildID()
         ];
+        if ($version) {
+            $info["ION"]["version"] = $version->name ?: $version->repo_path;
+            $info["ION"]["binary"] = $version->ext_path;
+        }
+        $build_flags = 0;
+
+        if ($this->ionizer->options["debug"] ?? false) {
+            $build_flags |= BaseHelper::BUILD_DEBUG;
+        }
+
         $info["PHP"] = [
             "version"    => PHP_VERSION,
             "zend_version" => zend_version(),
+            "extension_dir" => PHP_EXTENSION_DIR,
             "debug"      => (bool) PHP_DEBUG || ZEND_DEBUG_BUILD,
             "zts"        => (bool) PHP_ZTS,
-            "cmd"        => $this->ionizer->getPhpCmd(),
+            "cmd"        => $version ? $this->ionizer->getPhpCmd(true, $version) : "",
             "phpunit"    => trim(`which phpunit`),
             "composer"   => trim(`which composer`)
         ];
@@ -200,6 +214,7 @@ class Controller
             "family"     => $os_family,
             "name"       => $os_name,
             "version"    => $os_version,
+            "home"       => $_SERVER["HOME"],
             "uname"      => php_uname('a'),
             "cpu_count"  => $this->ionizer->helper->getCPUCount(),
             "cores_path" => $this->ionizer->helper->getCoreDumpPath(),
@@ -208,11 +223,11 @@ class Controller
         ];
         $info["IONIZER"] = [
             "version"     => $this->ionizer::VERSION,
-            "config_file" => $this->ionizer->config_path,
+            "config_file" => $this->ionizer->config->getPath(),
             "cache_dir"   => $this->ionizer->cache_dir,
-            "cflags"      => getenv("CFLAGS"),
-            "ldflags"     => getenv("LDFLAGS"),
-            "build_env"   => $this->ionizer->helper->buildFlags(),
+            "cflags"      => getenv("CFLAGS") ?: "",
+            "ldflags"     => getenv("LDFLAGS") ?: "",
+            "build_env"   => $this->ionizer->helper->buildFlags($build_flags),
             "gdb_cmd"     => $builder->gdb_cmd . " ...",
             "php_cmd"     => PHP_BINARY . " " . getenv('IONIZER_FLAGS') . " ..."
         ];

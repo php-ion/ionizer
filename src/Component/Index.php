@@ -118,31 +118,4 @@ class Index
         return $vers;
     }
 
-    /**
-     * Returns version info
-     *
-     * @param string $version
-     * @return array|null
-     */
-    public function searchVersion(string $version): ?array
-    {
-        if (isset($this->index["variants"][$version])) {
-            if (isset($this->index["variants"][$version][ $this->ionizer->getBuildID() ])) {
-                return $this->index["variants"][$version][ $this->ionizer->getBuildID() ];
-            } else {
-                return [];
-            }
-        } else {
-            throw new \RuntimeException("Not found variant for version $version");
-        }
-    }
-
-    /**
-     * Returns actual stable version
-     * @return string
-     */
-    public function getLastVersionName()
-    {
-        return key($this->index["variants"]) ?: "master";
-    }
 }

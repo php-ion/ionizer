@@ -35,13 +35,16 @@ class Config implements \ArrayAccess
                 $this->config = array_merge($config, $this->config);
             }
         } else {
-            if (!is_dir(dirname($this->path))) {
-                mkdir(dirname($this->path), 0755, true);
-            }
+            $this->changed = true;
             $this->log->debug("Create new config {$this->path}");
             $this->flush();
         }
         $this->path = realpath($this->path);
+    }
+
+    public function getPath(): string
+    {
+        return $this->path;
     }
 
     public function getAll(): array
