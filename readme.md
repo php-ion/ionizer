@@ -33,15 +33,3 @@ Build extension:
   * `ion test .`, `ion test /tmp/php-ion-src/`
   * `ion test master`, `ion test 0.8.3`, `ion test 33b1e417`
 * `ion clean` clean after build
-
-
-
-
-```php
-
-class Mage\ORM\EntityManager {
-
-}
-
-$
-```
